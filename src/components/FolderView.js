@@ -274,20 +274,20 @@ export default function FolderView({ visible, folder, onClose }) {
                         </View>
                     ) : (
                         <>
-                                <FlashList
-                                    data={galleryAssets}
-                                    numColumns={4}
-                                    estimatedItemSize={width / 4}
-                                    keyExtractor={(item, index) => `${item.id}-${index}`}
-                                    renderItem={renderThumbnail}
-                                    contentContainerStyle={styles.grid}
-                                    showsVerticalScrollIndicator={false}
-                                    initialScrollIndex={0}
-                                    estimatedListSize={{
-                                        height: height,
-                                        width: width,
-                                    }}
-                                />
+                            <FlashList
+                                data={galleryAssets}
+                                numColumns={4}
+                                estimatedItemSize={width / 4}
+                                keyExtractor={(item, index) => `${item.id}-${index}`}
+                                renderItem={renderThumbnail}
+                                contentContainerStyle={styles.grid}
+                                showsVerticalScrollIndicator={false}
+                                initialScrollIndex={0}
+                                estimatedListSize={{
+                                    height: height,
+                                    width: width,
+                                }}
+                            />
 
                             {galleryAssets.length > 0 && (
                                 <TouchableOpacity

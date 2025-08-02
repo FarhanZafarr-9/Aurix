@@ -1,243 +1,72 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
-import * as MediaLibrary from 'expo-media-library';
+import { useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import FolderView from '../components/FolderView';
 import { useMedia } from '../contexts/MediaContext';
+import FolderItem from '../components/FolderItem';
+import * as MediaLibrary from 'expo-media-library';
+import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useAppState } from '../contexts/AppStateContext';
 
-export default function FoldersScreen() {
+export default function Folders() {
+    const { needsRefresh, completeRefresh } = useAppState();
+
+    const navigation = useNavigation();
+
     const [permissions, requestPermissions] = MediaLibrary.usePermissions();
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [folders, setFolders] = useState([]);
-    const [showGallery, setShowGallery] = useState(false);
-    const [selectedFolder, setSelectedFolder] = useState(null);
+    const {
+        getAllFolders,
+        refreshAllData,
+        loading,
+        errors,
+        lastRefreshed,
+        getFolderCompletionStats
+    } = useMedia();
 
-    const { loadFolderMedia, getFolderStats, cleanupProgress } = useMedia();
+    // Get sorted folders array
+    const folders = getAllFolders();
 
-    useEffect(() => {
-        if (permissions?.granted) {
-            loadFolders();
-        } else if (permissions?.canAskAgain) {
-            requestPermissions();
+    // Get completion statistics
+    const completionStats = folders.reduce((stats, folder) => {
+        const folderStats = getFolderCompletionStats(folder.id);
+        if (folderStats?.isCompleted) {
+            stats.completed++;
+            stats.totalItemsToDelete += folderStats.itemsToDelete;
+        } else if (folderStats?.status === 'in-progress') {
+            stats.inProgress++;
         }
-    }, [permissions]);
+        return stats;
+    }, { completed: 0, inProgress: 0, totalItemsToDelete: 0 });
 
-    const loadFolders = async () => {
-        try {
-            setIsLoading(true);
-            setError(null);
-
-            console.log('Loading albums...');
-            const albums = await MediaLibrary.getAlbumsAsync({
-                includeSmartAlbums: true,
-            });
-
-            console.log(`Found ${albums.length} albums`);
-            const folderList = await processAlbums(albums);
-
-            // Add "All Media" folder if it contains media
-            const allMediaFolder = await getAllMediaFolder();
-            if (allMediaFolder) {
-                folderList.unshift(allMediaFolder);
-            }
-
-            console.log('Valid folders found:', folderList.length);
-            setFolders(folderList);
-        } catch (err) {
-            console.log('Error:', err);
-            setError('Failed to load media folders.');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const processAlbums = async (albums) => {
-        const validFolders = [];
-
-        for (const album of albums) {
-            try {
-                const folder = await processAlbum(album);
-                if (folder) {
-                    validFolders.push(folder);
+    useFocusEffect(
+        useCallback(() => {
+            if (permissions?.granted) {
+                if (needsRefresh) {
+                    refreshAllData();
+                    completeRefresh();
                 }
-            } catch (err) {
-                console.warn(`Error processing album ${album.title}:`, err);
             }
-        }
-
-        // Sort by item count (descending)
-        return validFolders.sort((a, b) => b.itemCount - a.itemCount);
-    };
-
-    const processAlbum = async (album) => {
-        const assetsPage = await MediaLibrary.getAssetsAsync({
-            first: 1,
-            album: album,
-            mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video],
-        });
-
-        if (assetsPage.totalCount === 0) return null;
-
-        const sampleSize = Math.min(50, assetsPage.totalCount);
-        const sampleAssets = await MediaLibrary.getAssetsAsync({
-            first: sampleSize,
-            album: album,
-            mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video],
-        });
-
-        const { photoCount, videoCount } = countMediaTypes(sampleAssets.assets);
-        const ratio = assetsPage.totalCount / sampleSize;
-
-        const folder = {
-            id: album.id,
-            name: album.title,
-            album: album,
-            itemCount: assetsPage.totalCount,
-            photoCount: Math.round(photoCount * ratio),
-            videoCount: Math.round(videoCount * ratio),
-            totalCount: assetsPage.totalCount,
-        };
-
-        // Preload media for folders with reasonable size
-        if (assetsPage.totalCount < 1000) {
-            loadFolderMedia(album.id).catch(console.warn);
-        }
-
-        return folder;
-    };
-
-    const getAllMediaFolder = async () => {
-        const totalAssets = await MediaLibrary.getAssetsAsync({
-            first: 1,
-            mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video]
-        });
-
-        if (totalAssets.totalCount === 0) return null;
-
-        const sampleSize = Math.min(50, totalAssets.totalCount);
-        const sampleAssets = await MediaLibrary.getAssetsAsync({
-            first: sampleSize,
-            mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video]
-        });
-
-        const { photoCount, videoCount } = countMediaTypes(sampleAssets.assets);
-        const ratio = totalAssets.totalCount / sampleSize;
-
-        const allMediaFolder = {
-            id: 'all',
-            name: 'All Media',
-            album: null,
-            itemCount: totalAssets.totalCount,
-            photoCount: Math.round(photoCount * ratio),
-            videoCount: Math.round(videoCount * ratio),
-            totalCount: totalAssets.totalCount,
-        };
-
-        // Preload "All Media" if reasonable size
-        if (totalAssets.totalCount < 2000) {
-            loadFolderMedia('all').catch(console.warn);
-        }
-
-        return allMediaFolder;
-    };
-
-    const countMediaTypes = (assets) => {
-        const photoCount = assets.filter(a => a.mediaType === MediaLibrary.MediaType.photo).length;
-        const videoCount = assets.filter(a => a.mediaType === MediaLibrary.MediaType.video).length;
-        return { photoCount, videoCount };
-    };
-
-    const getFolderIcon = (name, photoCount, videoCount) => {
-        const normalizedName = name?.toLowerCase().replace(/\s+/g, '') || '';
-
-        // Special cases for known folder names
-        if (normalizedName.includes('camera') || normalizedName === 'camera') return 'camera-outline';
-        if (normalizedName.includes('screenshot')) return 'phone-portrait-outline';
-        if (normalizedName.includes('download')) return 'download-outline';
-        if (normalizedName.includes('whatsapp')) return 'logo-whatsapp';
-        if (normalizedName.includes('instagram')) return 'logo-instagram';
-        if (normalizedName.includes('video') || normalizedName.includes('movie') || normalizedName.includes('videos')) return 'videocam-outline';
-        if (normalizedName.includes('photo') || normalizedName.includes('pictures')) return 'images-outline';
-        if (normalizedName === 'allmedia' || normalizedName === 'all') return 'grid-outline';
-
-        // Determine icon based on content type
-        if (photoCount > 0 && videoCount === 0) return 'images-outline';
-        if (videoCount > 0 && photoCount === 0) return 'videocam-outline';
-        return 'folder-outline';
-    };
-
-    const handleFolderPress = (folder) => {
-        setSelectedFolder(folder);
-        setShowGallery(true);
-    };
+        }, [permissions, needsRefresh])
+    );
 
     const renderFolderItem = ({ item }) => {
-        const cachedStats = getFolderStats(item.id);
-        const displayStats = cachedStats || {
-            photoCount: item.photoCount,
-            videoCount: item.videoCount,
-            totalCount: item.photoCount + item.videoCount,
-        };
-
-        const description = `${displayStats.photoCount} photos • ${displayStats.videoCount} videos`;
-        const cleanupStatus = cleanupProgress[item.id]?.status;
-
         return (
-            <TouchableOpacity
-                style={styles.folderContainer}
-                onPress={() => handleFolderPress(item)}
-                activeOpacity={0.8}
-            >
-
-                <View style={styles.iconContainer}>
-                    <Ionicons
-                        name={getFolderIcon(item.name, displayStats.photoCount, displayStats.videoCount)}
-                        size={20}
-                        color="#888"
-                    />
-                </View>
-
-                <View style={styles.folderContent}>
-                    <Text style={styles.folderName} numberOfLines={1}>{item.name}</Text>
-                    <Text style={styles.folderDescription} numberOfLines={1}>{description}</Text>
-                </View>
-
-                <View style={styles.statusContainer}>
-                    
-
-                    {cachedStats?.loaded && (
-                        <View style={styles.loadedIndicator}>
-                            <Ionicons name="checkmark" size={12} color="#4CAF50" />
-                        </View>
-                    )}
-
-                    {cleanupStatus && (
-                        <View style={[
-                            styles.statusBadge,
-                            cleanupStatus === 'completed' && styles.completedBadge,
-                            cleanupStatus === 'in-progress' && styles.inProgressBadge
-                        ]}>
-                            <Ionicons
-                                name={cleanupStatus === 'completed' ? 'checkmark' : 'arrow-forward'}
-                                size={14}
-                                color={cleanupStatus === 'completed' ? '#4CAF50' : '#FFA500'}
-                            />
-                        </View>
-                    )}
-
-                    <Text style={styles.itemCount}>{displayStats.totalCount}</Text>
-                </View>
-
-                
-            </TouchableOpacity>
+            <FolderItem
+                folder={item}
+                onPress={() => {
+                    navigation.navigate('Cleanup', {
+                        folderId: item.id,
+                        reset: false
+                    });
+                }}
+            />
         );
     };
 
     if (!permissions) {
         return (
             <View style={styles.container}>
-                <ActivityIndicator color="#666" size="large" />
+                <ActivityIndicator size="large" />
             </View>
         );
     }
@@ -246,9 +75,12 @@ export default function FoldersScreen() {
         return (
             <View style={styles.container}>
                 <View style={styles.centerContent}>
-                    <Ionicons name="folder-open-outline" size={48} color="#666" />
+                    <Ionicons name="folder-open-outline" size={48} color="#888" />
                     <Text style={styles.errorText}>Media access required</Text>
-                    <TouchableOpacity onPress={requestPermissions} style={styles.button}>
+                    <TouchableOpacity
+                        onPress={requestPermissions}
+                        style={styles.button}
+                    >
                         <Text style={styles.buttonText}>Grant Access</Text>
                     </TouchableOpacity>
                 </View>
@@ -256,24 +88,30 @@ export default function FoldersScreen() {
         );
     }
 
-    if (isLoading) {
+    if (loading.refresh) {
         return (
             <View style={styles.container}>
                 <View style={styles.centerContent}>
-                    <ActivityIndicator size="large" color="#666" />
-                    <Text style={styles.loadingText}>Scanning media...</Text>
+                    <ActivityIndicator size="large" />
+                    <Text style={styles.loadingText}>
+                        {folders.length > 0 ? 'Refreshing...' : 'Loading folders...'}
+                    </Text>
                 </View>
             </View>
         );
     }
 
-    if (error) {
+    if (errors.refresh) {
         return (
             <View style={styles.container}>
                 <View style={styles.centerContent}>
-                    <Ionicons name="alert-circle-outline" size={48} color="#666" />
-                    <Text style={styles.errorText}>{error}</Text>
-                    <TouchableOpacity style={styles.button} onPress={loadFolders}>
+                    <Ionicons name="warning" size={48} color="#ff5555" />
+                    <Text style={styles.errorText}>Error loading folders</Text>
+                    <Text style={styles.errorSubtext}>{errors.refresh}</Text>
+                    <TouchableOpacity
+                        onPress={refreshAllData}
+                        style={styles.button}
+                    >
                         <Text style={styles.buttonText}>Retry</Text>
                     </TouchableOpacity>
                 </View>
@@ -284,23 +122,86 @@ export default function FoldersScreen() {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>Media</Text>
-                <Text style={styles.headerSubtitle}>{folders.length} folders</Text>
+                <View>
+                    <Text style={styles.headerTitle}>Media Folders</Text>
+                    <Text style={styles.headerSubtitle}>
+                        {folders.length} folder{folders.length !== 1 ? 's' : ''}
+                        {completionStats.completed > 0 && ` • ${completionStats.completed} completed`}
+                        {completionStats.inProgress > 0 && ` • ${completionStats.inProgress} in progress`}
+                        {lastRefreshed && ` • Updated ${new Date(lastRefreshed).toLocaleTimeString()}`}
+                    </Text>
+                </View>
+
+                <TouchableOpacity
+                    onPress={refreshAllData}
+                    style={styles.refreshButton}
+                    disabled={loading.refresh}
+                >
+                    <Ionicons
+                        name="refresh"
+                        size={20}
+                        color={loading.refresh ? '#444' : '#666'}
+                    />
+                </TouchableOpacity>
             </View>
 
-            <FlatList
-                data={folders}
-                keyExtractor={item => item.id}
-                renderItem={renderFolderItem}
-                contentContainerStyle={styles.listContent}
-                showsVerticalScrollIndicator={false}
-            />
+            {/* Summary stats */}
+            {(completionStats.completed > 0 || completionStats.inProgress > 0) && (
+                <View style={styles.summaryContainer}>
+                    <View style={styles.summaryRow}>
+                        {completionStats.completed > 0 && (
+                            <View style={styles.summaryItem}>
+                                <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+                                <Text style={styles.summaryText}>
+                                    {completionStats.completed} completed
+                                </Text>
+                            </View>
+                        )}
+                        {completionStats.inProgress > 0 && (
+                            <View style={styles.summaryItem}>
+                                <Ionicons name="time-outline" size={16} color="#FF9500" />
+                                <Text style={styles.summaryText}>
+                                    {completionStats.inProgress} in progress
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+                    {completionStats.totalItemsToDelete > 0 && (
+                        <Text style={styles.summarySubtext}>
+                            {completionStats.totalItemsToDelete} item{completionStats.totalItemsToDelete !== 1 ? 's' : ''} ready for deletion
+                        </Text>
+                    )}
+                </View>
+            )}
 
-            <FolderView
-                visible={showGallery}
-                folder={selectedFolder}
-                onClose={() => setShowGallery(false)}
-            />
+            <View style={{ flex: 1 }}>
+                <FlatList
+                    data={folders}
+                    keyExtractor={item => item.id}
+                    renderItem={renderFolderItem}
+                    contentContainerStyle={styles.listContent}
+                    ListEmptyComponent={
+                        <View style={styles.emptyContainer}>
+                            <Ionicons name="folder-outline" size={48} color="#666" />
+                            <Text style={styles.emptyText}>No media folders found</Text>
+                            <TouchableOpacity
+                                onPress={refreshAllData}
+                                style={[styles.button, { marginTop: 16 }]}
+                            >
+                                <Text style={styles.buttonText}>Refresh</Text>
+                            </TouchableOpacity>
+                        </View>
+                    }
+                    refreshing={!!loading.refresh}
+                    onRefresh={refreshAllData}
+                    // Optional performance optimizations for FlatList
+                    initialNumToRender={15}
+                    maxToRenderPerBatch={15}
+                    windowSize={10}
+                    removeClippedSubviews={true}
+                />
+            </View>
+
         </View>
     );
 }
@@ -308,7 +209,8 @@ export default function FoldersScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#121212'
+        backgroundColor: '#0a0a0a',
+        paddingBottom: 55
     },
     centerContent: {
         flex: 1,
@@ -317,129 +219,103 @@ const styles = StyleSheet.create({
         padding: 24
     },
     header: {
-        paddingHorizontal: 16,
-        paddingTop: 50,
-        paddingBottom: 16,
-        marginBottom: 16,
+        paddingHorizontal: 20,
+        paddingTop: 36,
+        paddingBottom: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         backgroundColor: '#181818',
-        borderColor: '#55555555',
-        borderBottomWidth: .75
+        borderBottomWidth: 0.75,
+        borderBottomColor: '#55555555'
     },
     headerTitle: {
         color: '#fff',
-        fontSize: 24,
-        fontWeight: '700',
-        marginBottom: 2
+        fontSize: 20,
+        fontWeight: '600',
     },
     headerSubtitle: {
         color: '#666',
-        fontSize: 13
+        fontSize: 12,
+        marginTop: 4,
+        height: 18
+    },
+    refreshButton: {
+        padding: 6,
+        marginLeft: 10
+    },
+    summaryContainer: {
+        paddingHorizontal: 20,
+        paddingBottom: 10,
+
+    },
+    summaryRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 16,
+        marginBottom: 4,
+    },
+    summaryItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingTop: 15
+    },
+    summaryText: {
+        color: '#888',
+        fontSize: 12,
+        fontWeight: '500',
+        height: 18
+    },
+    summarySubtext: {
+        color: '#666',
+        fontSize: 11,
+        fontStyle: 'italic',
     },
     listContent: {
-        paddingHorizontal: 16,
-        paddingBottom: 80
+        paddingHorizontal: 12,
+        paddingBottom: 16,
+        paddingTop: 8,
+        minHeight: '100%'
     },
-    folderContainer: {
-        backgroundColor: '#181818',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 10,
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderWidth: 0.5,
-        borderColor: '#222',
-    },
-    iconContainer: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: '#1a1a1a',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 16,
-    },
-    folderContent: {
+    emptyContainer: {
         flex: 1,
-        justifyContent: 'center'
-    },
-    folderName: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 4
-    },
-    folderDescription: {
-        color: '#888',
-        fontSize: 13,
-        fontWeight: '500',
-        height: 20
-    },
-    statusContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8
-    },
-    itemCount: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '700',
-        minWidth: 40,
-        textAlign: 'right'
-    },
-    statusBadge: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
+        padding: 40
     },
-    completedBadge: {
-        backgroundColor: 'rgba(76, 175, 80, 0.2)',
-        borderWidth: 1,
-        borderColor: '#4CAF50'
-    },
-    inProgressBadge: {
-        backgroundColor: 'rgba(255, 165, 0, 0.2)',
-        borderWidth: 1,
-        borderColor: '#FFA500'
-    },
-    statusText: {
-        color: '#fff',
-        fontSize: 12,
-        fontWeight: 'bold',
-    },
-    loadedIndicator: {
-        backgroundColor: 'rgba(76, 175, 80, 0.2)',
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#4CAF50'
+    emptyText: {
+        color: '#666',
+        fontSize: 16,
+        marginTop: 12
     },
     loadingText: {
         color: '#888',
         marginTop: 12,
         fontSize: 14,
-        height: 20
     },
     errorText: {
-        color: '#888',
-        fontSize: 14,
+        color: '#ff5555',
+        fontSize: 16,
         textAlign: 'center',
-        marginVertical: 16,
+        marginBottom: 8
+    },
+    errorSubtext: {
+        color: '#888',
+        fontSize: 12,
+        textAlign: 'center',
+        marginBottom: 16,
+        maxWidth: '80%'
     },
     button: {
         backgroundColor: '#333',
         paddingHorizontal: 20,
         paddingVertical: 10,
-        borderRadius: 8,
-        marginTop: 12
+        borderRadius: 6,
     },
     buttonText: {
         color: '#fff',
-        fontWeight: '600',
+        fontWeight: '500',
         fontSize: 14
     },
 });
