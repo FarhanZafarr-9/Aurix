@@ -9,22 +9,10 @@ import {
     Dimensions,
     ScrollView
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../contexts/ThemeContext';
 
 const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
-
-// Dark monochromatic color palette
-const darkColors = {
-    background: '#121212',
-    card: '#1e1e1e',
-    cardLighter: '#282828',
-    settingBlock: '#1a1a1a',
-    border: '#333333',
-    text: '#e0e0e0',
-    textDesc: '#b0b0b0',
-    primary: '#404040',
-    highlight: '#505050',
-    overlay: '#000000'
-};
 
 const variables = {
     radius: {
@@ -40,7 +28,7 @@ const ChevronDownIcon = ({ size = 14, color = '#888' }) => (
         justifyContent: 'center',
         alignItems: 'center'
     }}>
-        <Text style={{ color, fontSize: size * 0.8 }}>▼</Text>
+        <Ionicons name="chevron-down" size={16} color="#666" />
     </View>
 );
 
@@ -69,9 +57,183 @@ const PickerSheet = ({
     defaultValue = null,
     note
 }) => {
+    const { colors } = useTheme();
     const [visible, setVisible] = useState(false);
     const [translateY] = useState(new Animated.Value(screenHeight));
     const [opacity] = useState(new Animated.Value(0));
+
+    const styles = useMemo(() => StyleSheet.create({
+        trigger: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            borderRadius: variables.radius.sm,
+            paddingVertical: 6,
+            paddingHorizontal: 8,
+            backgroundColor: colors.highlight + '20',
+            borderWidth: 1,
+            borderColor: colors.border,
+            minWidth: 60,
+            justifyContent: 'space-between',
+        },
+        triggerText: {
+            fontSize: 16,
+            color: colors.text,
+        },
+        overlay: {
+            flex: 1,
+            backgroundColor: colors.overlay + '90',
+            justifyContent: 'flex-end',
+        },
+        bottomSheet: {
+            backgroundColor: colors.surface,
+            borderTopLeftRadius: variables.radius.lg,
+            borderTopRightRadius: variables.radius.lg,
+            paddingBottom: 15,
+            borderWidth: 1,
+            borderColor: colors.border,
+            maxHeight: maxHeight,
+            minHeight: 200,
+            shadowColor: '#000',
+            shadowOffset: {
+                width: 0,
+                height: -2,
+            },
+            shadowOpacity: 0.25,
+            shadowRadius: 10,
+            elevation: 10,
+        },
+        handle: {
+            width: 40,
+            height: 4,
+            backgroundColor: colors.border,
+            borderRadius: 2,
+            alignSelf: 'center',
+            marginTop: 12,
+            marginBottom: 8,
+        },
+        header: {
+            paddingHorizontal: 20,
+            paddingVertical: 10,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+        },
+        headerTitle: {
+            fontSize: 18,
+            fontWeight: '500',
+            color: colors.text,
+        },
+        closeButton: {
+            padding: 4,
+        },
+        pillsContainer: {
+            padding: 20,
+            marginBottom: 0,
+            marginVertical: 20
+        },
+        pillsGrid: {
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+        },
+        pill: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingVertical: 8,
+            paddingHorizontal: 14,
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.card,
+            minHeight: 36,
+        },
+        selectedPill: {
+            backgroundColor: colors.primary,
+            borderColor: colors.primary,
+        },
+        pillText: {
+            fontSize: 14,
+            color: colors.text,
+            fontWeight: '500',
+            textAlign: 'center',
+            flex: 1,
+            height: 20,
+        },
+        selectedPillText: {
+            color: colors.text,
+            fontWeight: '600',
+        },
+        pillIcon: {
+            marginRight: 6,
+        },
+        emptyState: {
+            padding: 40,
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        emptyText: {
+            fontSize: 16,
+            color: colors.textSecondary,
+            textAlign: 'center',
+        },
+        actionButtons: {
+            flexDirection: 'row',
+            paddingHorizontal: 20,
+            paddingTop: 16,
+            paddingBottom: 8,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+            gap: 8,
+        },
+        actionButton: {
+            width: '48%',
+            paddingVertical: 12,
+            paddingHorizontal: 20,
+            borderRadius: 12,
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        clearButton: {
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.border,
+        },
+        clearButtonText: {
+            color: colors.text,
+            fontSize: 16,
+            fontWeight: '500',
+        },
+        doneButton: {
+            backgroundColor: colors.primary,
+        },
+        doneButtonText: {
+            color: colors.text,
+            fontSize: 16,
+            fontWeight: '600',
+        },
+        descContainer: {
+            marginTop: 20,
+            marginHorizontal: 20,
+            paddingVertical: 10,
+            backgroundColor: colors.card,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: variables.radius.sm,
+            borderWidth: 1,
+            borderColor: colors.border,
+        },
+        desc: {
+            fontSize: 14,
+            fontWeight: '500',
+            color: colors.textSecondary,
+            marginHorizontal: 20,
+            lineHeight: 20,
+            flexWrap: 'wrap'
+        },
+    }), [colors, maxHeight]);
 
     const showBottomSheet = () => {
         setVisible(true);
@@ -105,179 +267,6 @@ const PickerSheet = ({
             setVisible(false);
         });
     };
-
-    const styles = StyleSheet.create({
-        trigger: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            borderRadius: variables.radius.sm,
-            paddingVertical: 6,
-            paddingHorizontal: 8,
-            backgroundColor: darkColors.highlight + '20',
-            borderWidth: 1,
-            borderColor: darkColors.border,
-            minWidth: 60,
-            justifyContent: 'space-between',
-        },
-        triggerText: {
-            fontSize: 16,
-            color: darkColors.text,
-        },
-        overlay: {
-            flex: 1,
-            backgroundColor: darkColors.overlay + '90',
-            justifyContent: 'flex-end',
-        },
-        bottomSheet: {
-            backgroundColor: darkColors.settingBlock,
-            borderTopLeftRadius: variables.radius.lg,
-            borderTopRightRadius: variables.radius.lg,
-            paddingBottom: 15,
-            borderWidth: 1,
-            borderColor: darkColors.border,
-            maxHeight: maxHeight,
-            minHeight: 200,
-            shadowColor: '#000',
-            shadowOffset: {
-                width: 0,
-                height: -2,
-            },
-            shadowOpacity: 0.25,
-            shadowRadius: 10,
-            elevation: 10,
-        },
-        handle: {
-            width: 40,
-            height: 4,
-            backgroundColor: darkColors.border,
-            borderRadius: 2,
-            alignSelf: 'center',
-            marginTop: 12,
-            marginBottom: 8,
-        },
-        header: {
-            paddingHorizontal: 20,
-            paddingVertical: 10,
-            borderBottomWidth: 1,
-            borderBottomColor: darkColors.border,
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-        },
-        headerTitle: {
-            fontSize: 18,
-            fontWeight: '500',
-            color: darkColors.text,
-        },
-        closeButton: {
-            padding: 4,
-        },
-        pillsContainer: {
-            padding: 20,
-            marginBottom: 0,
-            marginVertical: 20
-        },
-        pillsGrid: {
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            justifyContent: 'space-between',
-        },
-        pill: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingVertical: 8,
-            paddingHorizontal: 14,
-            borderRadius: 8,
-            borderWidth: 1,
-            borderColor: darkColors.border,
-            backgroundColor: darkColors.cardLighter,
-            minHeight: 36,
-        },
-        selectedPill: {
-            backgroundColor: darkColors.primary,
-            borderColor: darkColors.primary,
-        },
-        pillText: {
-            fontSize: 14,
-            color: darkColors.text,
-            fontWeight: '500',
-            textAlign: 'center',
-            flex: 1,
-            height: 20,
-        },
-        selectedPillText: {
-            color: darkColors.text,
-            fontWeight: '600',
-        },
-        pillIcon: {
-            marginRight: 6,
-        },
-        emptyState: {
-            padding: 40,
-            alignItems: 'center',
-            justifyContent: 'center',
-        },
-        emptyText: {
-            fontSize: 16,
-            color: darkColors.text + '80',
-            textAlign: 'center',
-        },
-        actionButtons: {
-            flexDirection: 'row',
-            paddingHorizontal: 20,
-            paddingTop: 16,
-            paddingBottom: 8,
-            borderTopWidth: 1,
-            borderTopColor: darkColors.border,
-            gap: 8,
-        },
-        actionButton: {
-            width: '48%',
-            paddingVertical: 12,
-            paddingHorizontal: 20,
-            borderRadius: 12,
-            alignItems: 'center',
-            justifyContent: 'center',
-        },
-        clearButton: {
-            backgroundColor: darkColors.card,
-            borderWidth: 1,
-            borderColor: darkColors.border,
-        },
-        clearButtonText: {
-            color: darkColors.text,
-            fontSize: 16,
-            fontWeight: '500',
-        },
-        doneButton: {
-            backgroundColor: darkColors.primary,
-        },
-        doneButtonText: {
-            color: darkColors.text,
-            fontSize: 16,
-            fontWeight: '600',
-        },
-        descContainer: {
-            marginTop: 20,
-            marginHorizontal: 20,
-            paddingVertical: 10,
-            backgroundColor: darkColors.card,
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: variables.radius.sm,
-            borderWidth: 1,
-            borderColor: darkColors.border,
-        },
-        desc: {
-            fontSize: 14,
-            fontWeight: '500',
-            color: darkColors.textDesc,
-            marginHorizontal: 20,
-            lineHeight: 20,
-            flexWrap: 'wrap'
-        },
-    });
 
     const selectedOption = options.find(opt => opt.value === value);
     const selectedLabel = selectedOption?.label || placeholder;
@@ -342,7 +331,7 @@ const PickerSheet = ({
                     {option.icon && (
                         <View style={styles.pillIcon}>
                             {React.cloneElement(option.icon, {
-                                color: isSelected ? darkColors.text : option.icon.props.color || darkColors.text,
+                                color: isSelected ? colors.text : option.icon.props.color || colors.text,
                                 size: option.icon.props.size || 16,
                             })}
                         </View>
@@ -360,7 +349,7 @@ const PickerSheet = ({
                 </TouchableOpacity>
             </Animated.View>
         );
-    }, [value, styles, animationValues, handlePillPressWithAnimation, pillsPerRow]);
+    }, [value, styles, animationValues, handlePillPressWithAnimation, pillsPerRow, colors.text]);
 
     return (
         <>
@@ -372,7 +361,7 @@ const PickerSheet = ({
                 {selectedIcon ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                         {React.cloneElement(selectedIcon, {
-                            color: selectedIcon.props.color ? selectedIcon.props.color : darkColors.text
+                            color: selectedIcon.props.color ? selectedIcon.props.color : colors.text
                         })}
                     </View>
                 ) : (
@@ -412,7 +401,7 @@ const PickerSheet = ({
                                     onPress={hideBottomSheet}
                                     activeOpacity={0.7}
                                 >
-                                    <CloseIcon size={20} color={darkColors.text} />
+                                    <CloseIcon size={20} color={colors.text} />
                                 </TouchableOpacity>
                             </View>
                         )}

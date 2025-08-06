@@ -1,217 +1,265 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useMedia } from '../contexts/MediaContext';
+import { useTheme } from '../contexts/ThemeContext';
+import BottomSheet from './BottomSheet';
 
-const FolderItem = ({ folder, onPress }) => {
-    const { getFolderCompletionStats } = useMedia();
-    const completionStats = getFolderCompletionStats(folder.id);
+const FolderItem = ({ folder, onPress, showCounts, showProgress }) => {
+    const { colors } = useTheme();
+    const {
+        isFolderCompleted,
+        getFolderCompletionInfo,
+        hasActiveSession,
+        clearFolderCompletion
+    } = useMedia();
 
-    const getStatusInfo = () => {
-        if (!completionStats) return null;
+    const isCompleted = isFolderCompleted(folder.id);
+    const completionInfo = getFolderCompletionInfo(folder.id);
+    const hasSession = hasActiveSession(folder.id);
+    const [isBottomSheetVisible, setBottomSheetVisible] = useState(false);
 
-        switch (completionStats.status) {
-            case 'completed':
-                return {
-                    color: '#4CAF50',
-                    text: completionStats.itemsToDelete > 0
-                        ? `${completionStats.itemsToDelete} to delete`
-                        : 'Completed',
-                    showCheckmark: true
-                };
-            case 'in-progress':
-                return {
-                    color: '#FF9500',
-                    text: `${completionStats.currentIndex}/${completionStats.totalCount}`,
-                    progress: (completionStats.currentIndex / completionStats.totalCount) * 100
-                };
-            case 'initialized':
-                return {
-                    color: '#007AFF',
-                    text: 'Ready to start'
-                };
-            default:
-                return null;
+    const styles = useMemo(() => StyleSheet.create({
+        container: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: 12,
+            backgroundColor: isCompleted ? colors.background : colors.card,
+            borderRadius: 10,
+            marginBottom: 8,
+            borderWidth: 1,
+            borderColor: '#44444444',
+            opacity: !isCompleted ? 1 : 0.5
+        },
+        thumbnailContainer: {
+            position: 'relative',
+            marginRight: 12,
+        },
+        thumbnail: {
+            width: 50,
+            height: 50,
+            borderRadius: 8,
+            backgroundColor: colors.surface,
+        },
+        placeholderThumbnail: {
+            justifyContent: 'center',
+            alignItems: 'center',
+        },
+        completedOverlay: {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: colors.surface + 'b0',
+            overflow: 'hidden',
+            borderRadius: 6,
+            justifyContent: 'center',
+            alignItems: 'center',
+        },
+        infoContainer: {
+            flex: 1,
+            justifyContent: 'center',
+            gap: 4,
+        },
+        name: {
+            color: colors.text,
+            fontSize: 16,
+            fontWeight: '500',
+            height: 24
+        },
+        detailsRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 2,
+        },
+        itemCount: {
+            color: colors.textSecondary,
+            fontSize: 12,
+            height: 16,
+            fontWeight: '600',
+            letterSpacing: 0.6
+        },
+        separator: {
+            color: colors.textTertiary,
+            fontSize: 13,
+            marginHorizontal: 6,
+        },
+        statusText: {
+            fontSize: 12,
+            fontWeight: '600',
+            letterSpacing: 0.8,
+            height: 16
+        },
+        completedText: {
+            color: '#4CAF50',
+        },
+        inProgressText: {
+            color: '#FF9500',
+        },
+        readyText: {
+            color: '#007AFF',
+        },
+        rightContainer: {
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            marginLeft: 8,
+            gap: 4,
+        },
+        pillsContainer: {
+            flexDirection: 'row',
+            gap: 4,
+        },
+        pill: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingHorizontal: 6,
+            paddingVertical: 2,
+            borderRadius: 10,
+            backgroundColor: colors.highlight,
+            borderColor: colors.border,
+            borderWidth: 0.75,
+        },
+        pillText: {
+            color: colors.text,
+            fontSize: 12,
+            fontWeight: '600',
+            marginLeft: 4,
+            height: 16,
+        },
+    }), [colors, isCompleted]);
+
+    const handlePress = () => {
+        if (isCompleted) {
+            setBottomSheetVisible(true);
+        } else {
+            onPress();
         }
     };
 
-    const statusInfo = getStatusInfo();
+    const getStatusDisplay = () => {
+        if (isCompleted) {
+            if (completionInfo?.itemsDeleted > 0) {
+                return {
+                    text: `${completionInfo.itemsDeleted} deleted`,
+                    style: styles.completedText
+                };
+            } else {
+                return {
+                    text: 'Cleaned',
+                    style: styles.completedText
+                };
+            }
+        }
+
+        if (hasSession) {
+            return {
+                text: 'In progress',
+                style: styles.inProgressText
+            };
+        }
+
+        return {
+            text: 'Ready to clean',
+            style: styles.readyText
+        };
+    };
+
+    const statusDisplay = getStatusDisplay();
 
     return (
-        <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.9}>
-            {/* Thumbnail with status overlay */}
-            <View style={styles.thumbnailContainer}>
-                {folder.firstAssetUri ? (
-                    <Image
-                        source={{ uri: folder.firstAssetUri }}
-                        style={styles.thumbnail}
-                        resizeMode="cover"
+        <>
+            <TouchableOpacity
+                style={styles.container}
+                onPress={handlePress}
+                activeOpacity={0.7}
+            >
+                {/* Thumbnail with completion overlay */}
+                <View style={styles.thumbnailContainer}>
+                    {folder.firstAssetUri ? (
+                        <Image
+                            source={{ uri: folder.firstAssetUri }}
+                            style={styles.thumbnail}
+                            resizeMode="cover"
+                        />
+                    ) : (
+                        <View style={[styles.thumbnail, styles.placeholderThumbnail]}>
+                            <Ionicons name="image-outline" size={20} color={colors.textSecondary} />
+                        </View>
+                    )}
+
+                    {isCompleted && (
+                        <View style={styles.completedOverlay}>
+                            <Ionicons name="checkmark-circle" size={24} color="white" />
+                        </View>
+                    )}
+                </View>
+
+                {/* Folder Info */}
+                <View style={styles.infoContainer}>
+                    <Text style={styles.name} numberOfLines={1}>{folder.name}</Text>
+
+                    {showProgress && <View style={styles.detailsRow}>
+                        <Text style={styles.itemCount}>{folder.totalCount} items</Text>
+                        <Text style={styles.separator}>•</Text>
+                        <Text style={[styles.statusText, statusDisplay.style]}>
+                            {statusDisplay.text}
+                        </Text>
+                    </View>}
+                </View>
+
+                {/* Media type pills and indicator */}
+                <View style={styles.rightContainer}>
+                    {showCounts && <View style={styles.pillsContainer}>
+                        {folder.videoCount > 0 && (
+                            <View style={styles.pill}>
+                                <Ionicons name="videocam" size={12} color={colors.text} />
+                                <Text style={styles.pillText}>{folder.videoCount}</Text>
+                            </View>
+                        )}
+                        {folder.photoCount > 0 && (
+                            <View style={styles.pill}>
+                                <Ionicons name="image" size={12} color={colors.text} />
+                                <Text style={styles.pillText}>{folder.photoCount}</Text>
+                            </View>
+                        )}
+                    </View>}
+
+                    <Ionicons
+                        name={isCompleted ? "checkmark-circle" : "chevron-forward"}
+                        size={20}
+                        color={isCompleted ? "#4CAF50" : colors.textSecondary}
                     />
-                ) : (
-                    <View style={[styles.thumbnail, styles.placeholderThumbnail]}>
-                        <Ionicons name="image-outline" size={20} color="#666" />
-                    </View>
-                )}
-
-                {statusInfo?.showCheckmark && (
-                    <View style={styles.checkmarkOverlay}>
-                        <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
-                    </View>
-                )}
-            </View>
-
-            {/* Folder Info */}
-            <View style={styles.infoContainer}>
-                <Text style={styles.name} numberOfLines={1}>{folder.name}</Text>
-
-                <View style={styles.detailsRow}>
-                    <Text style={styles.itemCount}>{folder.totalCount} items</Text>
-
-                    {statusInfo && (
-                        <>
-                            <Text style={styles.separator}>•</Text>
-                            <Text style={[styles.statusText, { color: statusInfo.color }]}>
-                                {statusInfo.text}
-                            </Text>
-                        </>
-                    )}
                 </View>
+            </TouchableOpacity>
 
-                {/* Progress bar for in-progress folders */}
-                {statusInfo?.progress && (
-                    <View style={styles.progressBar}>
-                        <View style={[styles.progressFill, { width: `${statusInfo.progress}%` }]} />
-                    </View>
-                )}
-            </View>
-
-            {/* Media type pills and arrow */}
-            <View style={styles.rightContainer}>
-                <View style={styles.pillsContainer}>
-                    {folder.videoCount > 0 && (
-                        <View style={styles.pill}>
-                            <Ionicons name="videocam" size={12} color="#fff" />
-                            <Text style={styles.pillText}>{folder.videoCount}</Text>
-                        </View>
-                    )}
-                    {folder.photoCount > 0 && (
-                        <View style={styles.pill}>
-                            <Ionicons name="image" size={12} color="#fff" />
-                            <Text style={styles.pillText}>{folder.photoCount}</Text>
-                        </View>
-                    )}
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#888" />
-            </View>
-        </TouchableOpacity>
+            {completionInfo && (
+                <BottomSheet
+                    visible={isBottomSheetVisible}
+                    title="Folder Already Completed"
+                    pillText={new Date(completionInfo.completedAt).toLocaleDateString()}
+                    message={`Results: ${completionInfo.itemsDeleted} items deleted, rest items kept.\n\nWhat would you like to do?`}
+                    buttons={['Cancel', 'Re-evaluate', 'View Results']}
+                    actions={[
+                        () => setBottomSheetVisible(false), // Cancel
+                        () => {
+                            clearFolderCompletion(folder.id);
+                            onPress();
+                            setBottomSheetVisible(false);
+                        }, // Re-evaluate
+                        () => {
+                            onPress();
+                            setBottomSheetVisible(false);
+                        } // View Results
+                    ]}
+                    destructiveIndex={1}
+                    successiveIndex={2}
+                    onClose={() => setBottomSheetVisible(false)}
+                />
+            )}
+        </>
     );
 };
-
-const styles = StyleSheet.create({
-    container: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 12,
-        backgroundColor: '#1a1a1a',
-        borderRadius: 10,
-        marginBottom: 8,
-    },
-    thumbnailContainer: {
-        position: 'relative',
-        marginRight: 12,
-    },
-    thumbnail: {
-        width: 50,
-        height: 50,
-        borderRadius: 8,
-        backgroundColor: '#2a2a2a',
-    },
-    placeholderThumbnail: {
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    checkmarkOverlay: {
-        position: 'absolute',
-        top: -4,
-        right: -4,
-        backgroundColor: '#1a1a1a',
-        borderRadius: 10,
-        padding: 2,
-    },
-    infoContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        gap: 4,
-    },
-    name: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '500',
-    },
-    detailsRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 2,
-        
-    },
-    itemCount: {
-        color: '#888',
-        fontSize: 12,
-        height: 16,
-        fontWeight: '600',
-        letterSpacing: 0.6
-    },
-    separator: {
-        color: '#666',
-        fontSize: 13,
-        marginHorizontal: 6,
-    },
-    statusText: {
-        fontSize: 12,
-        fontWeight: '600',
-        letterSpacing: 0.8,
-        height: 16
-    },
-    progressBar: {
-        height: 2,
-        backgroundColor: '#333',
-        borderRadius: 1,
-        marginTop: 2,
-        overflow: 'hidden',
-    },
-    progressFill: {
-        height: '100%',
-        backgroundColor: '#FF9500',
-        borderRadius: 1,
-    },
-    rightContainer: {
-        alignItems: 'flex-end',
-        justifyContent: 'center',
-        marginLeft: 8,
-        gap: 4,
-    },
-    pillsContainer: {
-        flexDirection: 'row',
-        gap: 4,
-    },
-    pill: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderRadius: 10,
-        backgroundColor: '#ffffff14',
-        borderColor: '#55555555',
-        borderWidth: 0.75,
-    },
-    pillText: {
-        color: '#fff',
-        fontSize: 12,
-        fontWeight: '600',
-        marginLeft: 4,
-        height: 16,
-    },
-});
 
 export default FolderItem;

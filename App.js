@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { MediaProvider } from './src/contexts/MediaContext';
 import { HistoryProvider } from './src/contexts/HistoryContext';
 import { AppStateProvider } from './src/contexts/AppStateContext';
+import { ThemeProvider } from './src/contexts/ThemeContext';
 
 import BottomTabs from './src/components/BottomTabs';
 import Cleanup from './src/screens/Cleanup';
@@ -20,29 +21,31 @@ export default function App() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <NavigationContainer>
-            <AppStateProvider>
-              <HistoryProvider>
-                <MediaProvider>
-                  <Stack.Navigator>
-                    {/* Main app with bottom tabs */}
-                    <Stack.Screen
-                      name="Main"
-                      component={BottomTabs}
-                      options={{ headerShown: false }}
-                    />
-                    {/* Cleanup screen */}
-                    <Stack.Screen
-                      name="Cleanup"
-                      component={Cleanup}
-                      options={{
-                        headerShown: false,
-                        presentation: 'modal'
-                      }}
-                    />
-                  </Stack.Navigator>
-                </MediaProvider>
-              </HistoryProvider>
-            </AppStateProvider>
+            <ThemeProvider>
+              <AppStateProvider>
+                <HistoryProvider>
+                  <MediaProvider>
+                    <Stack.Navigator>
+                      {/* Main app with bottom tabs */}
+                      <Stack.Screen
+                        name="Main"
+                        component={BottomTabs}
+                        options={{ headerShown: false }}
+                      />
+                      {/* Cleanup screen */}
+                      <Stack.Screen
+                        name="Cleanup"
+                        component={Cleanup}
+                        options={{
+                          headerShown: false,
+                          presentation: 'modal'
+                        }}
+                      />
+                    </Stack.Navigator>
+                  </MediaProvider>
+                </HistoryProvider>
+              </AppStateProvider>
+            </ThemeProvider>
           </NavigationContainer>
         </SafeAreaProvider>
       </GestureHandlerRootView>
