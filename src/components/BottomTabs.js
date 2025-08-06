@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -12,6 +12,7 @@ import {
     Easing
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../contexts/ThemeContext';
 
 import Folders from '../screens/Folders';
 import History from '../screens/History';
@@ -28,6 +29,7 @@ const screenOptions = {
 };
 
 const CustomTabBar = ({ state, descriptors, navigation }) => {
+    const { colors } = useTheme();
     const insets = useSafeAreaInsets();
     const [activeIndex, setActiveIndex] = useState(0);
 
@@ -40,6 +42,88 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
     const highlightAnimations = useRef(
         state.routes.map(() => new Animated.Value(0))
     ).current;
+
+    const styles = useMemo(() => StyleSheet.create({
+        // Tab bar background container (flush with bottom, no rounded corners)
+        bgContainer: {
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 55,
+            zIndex: 1000,
+            elevation: Platform.OS === 'android' ? 8 : 0,
+        },
+
+        // Inner tab bar container (no radius, full-width)
+        container: {
+            flexDirection: 'row',
+            backgroundColor: colors.header,
+            borderColor: colors.border,
+            borderTopWidth: .75,
+            alignItems: 'center',
+            height: 55,
+            paddingHorizontal: 12,
+            position: 'relative',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -4 },
+            shadowOpacity: 0.15,
+            shadowRadius: 6,
+            elevation: 8,
+        },
+
+        // Each tab wrapper
+        tab: {
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100%',
+            zIndex: 2,
+        },
+
+        // Content inside each tab (icon + optional label)
+        tabContent: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 8,
+            paddingVertical: 6,
+            borderRadius: 12,
+            minHeight: 35,
+        },
+
+        iconContainer: {
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: 24,
+        },
+
+        labelContainer: {
+            marginLeft: 6,
+            alignItems: 'center',
+        },
+
+        tabText: {
+            color: colors.text,
+            fontSize: 10,
+            fontWeight: '600',
+            letterSpacing: 0.3,
+        },
+
+        // Active pill
+        pill: {
+            position: 'absolute',
+            height: 40,
+            backgroundColor: colors.highlight,
+            top: 7,
+            borderRadius: 12,
+            zIndex: 1,
+            borderWidth: 0.5,
+            borderColor: colors.border,
+            shadowColor: colors.text,
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.1,
+            shadowRadius: 3,
+        },
+    }), [colors]);
 
     // Precise calculations
     const containerPadding = 12;
@@ -142,94 +226,6 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
         }
     };
 
-    const styles = StyleSheet.create({
-        container: {
-            flex: 1,
-            backgroundColor: 'transparent',
-        },
-
-        // Tab bar background container (flush with bottom, no rounded corners)
-        bgContainer: {
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: 55,
-            zIndex: 1000,
-            elevation: Platform.OS === 'android' ? 8 : 0,
-        },
-
-        // Inner tab bar container (no radius, full-width)
-        container: {
-            flexDirection: 'row',
-            backgroundColor: '#181818',
-            borderColor: '#55555555',
-            borderTopWidth: .75,
-            alignItems: 'center',
-            height: 55,
-            paddingHorizontal: 12,
-            position: 'relative',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: -4 },
-            shadowOpacity: 0.15,
-            shadowRadius: 6,
-            elevation: 8,
-        },
-
-        // Each tab wrapper
-        tab: {
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            zIndex: 2,
-        },
-
-        // Content inside each tab (icon + optional label)
-        tabContent: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingHorizontal: 8,
-            paddingVertical: 6,
-            borderRadius: 12,
-            minHeight: 35,
-        },
-
-        iconContainer: {
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: 24,
-        },
-
-        labelContainer: {
-            marginLeft: 6,
-            alignItems: 'center',
-        },
-
-        tabText: {
-            color: '#cdcdcd',
-            fontSize: 10,
-            fontWeight: '600',
-            letterSpacing: 0.3,
-        },
-
-        // Active pill
-        pill: {
-            position: 'absolute',
-            height: 40,
-            backgroundColor: '#ffffff12',
-            top: 7,
-            borderRadius: 12,
-            zIndex: 1,
-            borderWidth: 0.5,
-            borderColor: '#55555555',
-            shadowColor: '#ffffff',
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.1,
-            shadowRadius: 3,
-        },
-    });
-
-
     return (
         <View style={styles.bgContainer}>
             <View style={styles.container}>
@@ -286,7 +282,7 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
                                     <Ionicons
                                         name={isFocused ? iconName : iconOutline}
                                         size={iconSize}
-                                        color={isFocused ? '#ffffff' : '#888888'}
+                                        color={isFocused ? colors.text : colors.textSecondary}
                                     />
                                 </Animated.View>
 
@@ -324,6 +320,15 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
 };
 
 export default function BottomTabs() {
+    const { colors } = useTheme();
+
+    const styles = useMemo(() => StyleSheet.create({
+        container: {
+            flex: 1,
+            backgroundColor: colors.background,
+        },
+    }), [colors]);
+
     return (
         <View style={styles.container}>
             <Tab.Navigator
@@ -339,7 +344,7 @@ export default function BottomTabs() {
                             <Ionicons
                                 name={focused ? 'folder' : 'folder-outline'}
                                 size={22}
-                                color={focused ? '#ffffff' : '#888888'}
+                                color={focused ? colors.text : colors.textSecondary}
                             />
                         ),
                     }}
@@ -353,7 +358,7 @@ export default function BottomTabs() {
                             <Ionicons
                                 name={focused ? 'time' : 'time-outline'}
                                 size={22}
-                                color={focused ? '#ffffff' : '#888888'}
+                                color={focused ? colors.text : colors.textSecondary}
                             />
                         ),
                     }}
@@ -367,7 +372,7 @@ export default function BottomTabs() {
                             <Ionicons
                                 name={focused ? 'settings' : 'settings-outline'}
                                 size={22}
-                                color={focused ? '#ffffff' : '#888888'}
+                                color={focused ? colors.text : colors.textSecondary}
                             />
                         ),
                     }}
@@ -376,10 +381,3 @@ export default function BottomTabs() {
         </View>
     );
 }
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#1e1e1e',
-    },
-});

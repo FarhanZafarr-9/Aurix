@@ -1,55 +1,63 @@
-import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
 import * as MediaLibrary from 'expo-media-library';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEYS = {
-    CLEANUP_PROGRESS: '@MediaCleanupProgress',
+    COMPLETED_FOLDERS: '@CompletedFolders', // Simple completion tracking
+    CURRENT_SESSION: '@CurrentCleanupSession', // Only current session data
     FOLDERS_METADATA: '@FoldersMetadata',
     FOLDER_ASSETS: '@FolderAssets'
 };
 
-const BATCH_SIZE = 10; // Load assets in batches
+const BATCH_SIZE = 10;
 
 const MediaContext = createContext();
 
 export function MediaProvider({ children }) {
     // State management
     const [foldersMetadata, setFoldersMetadata] = useState({});
-    const [folderAssets, setFolderAssets] = useState({}); // { folderId: { assets: [], totalCount, cursor } }
+    const [folderAssets, setFolderAssets] = useState({});
     const [loading, setLoading] = useState({});
     const [errors, setErrors] = useState({});
-    const [cleanupProgress, setCleanupProgress] = useState({});
     const [lastRefreshed, setLastRefreshed] = useState(null);
-    const [sortMethod, setSortMethod] = useState('count'); // Default to count sorting
+    const [sortMethod, setSortMethod] = useState('count');
+
+    // Simplified completion tracking - just folder IDs and basic info
+    const [completedFolders, setCompletedFolders] = useState({}); // { folderId: { completedAt, itemsDeleted, totalItems } }
+
+    // Current session only - gets cleared when session ends
+    const [currentSession, setCurrentSession] = useState({
+        folderId: null,
+        deleteQueue: [],
+        keepQueue: [],
+        currentIndex: 0
+    });
 
     // Load initial data from cache
     useEffect(() => {
         const loadCachedData = async () => {
             try {
-                const [cachedMetadata, cachedProgress] = await Promise.all([
+                const [cachedMetadata, cachedCompleted] = await Promise.all([
                     AsyncStorage.getItem(STORAGE_KEYS.FOLDERS_METADATA),
-                    AsyncStorage.getItem(STORAGE_KEYS.CLEANUP_PROGRESS)
+                    AsyncStorage.getItem(STORAGE_KEYS.COMPLETED_FOLDERS)
                 ]);
 
                 if (cachedMetadata) {
                     setFoldersMetadata(JSON.parse(cachedMetadata));
                 }
 
-                if (cachedProgress) {
-                    const progress = JSON.parse(cachedProgress);
-                    //console.log('Loaded cached progress:', progress);
-                    setCleanupProgress(progress);
+                if (cachedCompleted) {
+                    const completed = JSON.parse(cachedCompleted);
+                    console.log('Loaded completed folders:', completed);
+                    setCompletedFolders(completed);
                 }
 
-                // Refresh if data is stale (> 1 hour old)
-                const metadata = cachedMetadata ? JSON.parse(cachedMetadata) : {};
-                const oldestTimestamp = Object.values(metadata).reduce((oldest, folder) => {
-                    const folderTime = new Date(folder.lastUpdated).getTime();
-                    return folderTime < oldest ? folderTime : oldest;
-                }, Date.now());
-
-                if (Date.now() - oldestTimestamp > 3600000) { // 1 hour
-                    refreshAllData();
+                // Load current session if exists (user might have closed app mid-cleanup)
+                const currentSessionData = await AsyncStorage.getItem(STORAGE_KEYS.CURRENT_SESSION);
+                if (currentSessionData) {
+                    const session = JSON.parse(currentSessionData);
+                    console.log('Resuming session:', session);
+                    setCurrentSession(session);
                 }
             } catch (error) {
                 console.warn('Failed to load cached data:', error);
@@ -59,35 +67,42 @@ export function MediaProvider({ children }) {
         loadCachedData();
     }, []);
 
-    // Save data when it changes - Fixed debouncing
+    // Save completion data when it changes
     useEffect(() => {
-        const saveData = async () => {
+        const saveCompletionData = async () => {
             try {
-                /*
-                console.log('Saving to AsyncStorage:', {
-                    foldersCount: Object.keys(foldersMetadata).length,
-                    progressCount: Object.keys(cleanupProgress).length
-                });
-                */
-
-                await AsyncStorage.multiSet([
-                    [STORAGE_KEYS.FOLDERS_METADATA, JSON.stringify(foldersMetadata)],
-                    [STORAGE_KEYS.CLEANUP_PROGRESS, JSON.stringify(cleanupProgress)]
-                ]);
-
-                //console.log('Successfully saved to AsyncStorage');
+                await AsyncStorage.setItem(STORAGE_KEYS.COMPLETED_FOLDERS, JSON.stringify(completedFolders));
             } catch (error) {
-                console.error('Failed to save data to AsyncStorage:', error);
+                console.error('Failed to save completion data:', error);
             }
         };
 
-        if (Object.keys(foldersMetadata).length > 0 || Object.keys(cleanupProgress).length > 0) {
-            const timeoutId = setTimeout(saveData, 100); // Reduced debounce time
+        if (Object.keys(completedFolders).length > 0) {
+            const timeoutId = setTimeout(saveCompletionData, 100);
             return () => clearTimeout(timeoutId);
         }
-    }, [foldersMetadata, cleanupProgress]);
+    }, [completedFolders]);
 
-    // Core data fetching functions
+    // Save current session data
+    useEffect(() => {
+        const saveSession = async () => {
+            try {
+                if (currentSession.folderId) {
+                    await AsyncStorage.setItem(STORAGE_KEYS.CURRENT_SESSION, JSON.stringify(currentSession));
+                } else {
+                    // Clear session if no active folder
+                    await AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_SESSION);
+                }
+            } catch (error) {
+                console.error('Failed to save session:', error);
+            }
+        };
+
+        const timeoutId = setTimeout(saveSession, 100);
+        return () => clearTimeout(timeoutId);
+    }, [currentSession]);
+
+    // Core data fetching functions (unchanged)
     const getFolderMetadata = useCallback(async (album, forceRefresh = false) => {
         const cacheKey = `folder-${album.id}-metadata`;
 
@@ -98,7 +113,6 @@ export function MediaProvider({ children }) {
         try {
             setLoading(prev => ({ ...prev, [cacheKey]: true }));
 
-            // Get at least 1 photo asset to ensure we have a valid URI
             const assetsResult = await MediaLibrary.getAssetsAsync({
                 album,
                 first: 1,
@@ -108,7 +122,6 @@ export function MediaProvider({ children }) {
 
             if (assetsResult.totalCount === 0) return null;
 
-            // Get counts separately
             const [photoResult, videoResult] = await Promise.all([
                 MediaLibrary.getAssetsAsync({
                     album,
@@ -151,16 +164,35 @@ export function MediaProvider({ children }) {
         }
     }, [foldersMetadata]);
 
-    // Batch loading for assets - only load what we need
-    const loadAssetsBatch = useCallback(async (folderId, startIndex = 0, batchSize = BATCH_SIZE) => {
+    const loadAssetsBatch = useCallback(async (folderId, startIndex = 0, customBatchSize = null) => {
         const cacheKey = `folder-${folderId}-batch-${startIndex}`;
 
         try {
             setLoading(prev => ({ ...prev, [cacheKey]: true }));
 
+            let batchSize = BATCH_SIZE;
+            if (customBatchSize) {
+                batchSize = customBatchSize;
+            } else {
+                try {
+                    const cleanupSettings = await AsyncStorage.getItem('@CleanupSettings');
+                    if (cleanupSettings) {
+                        const settings = JSON.parse(cleanupSettings);
+                        const batchSizeMap = {
+                            small: 5,
+                            medium: 10,
+                            large: 20,
+                            xlarge: 50
+                        };
+                        batchSize = batchSizeMap[settings.batchSize] || BATCH_SIZE;
+                    }
+                } catch (error) {
+                    console.warn('Failed to get batch size from settings:', error);
+                }
+            }
+
             const existingData = folderAssets[folderId] || { assets: [], totalCount: 0, cursor: null };
 
-            // If we already have these assets, return them
             if (existingData.assets.length > startIndex + batchSize - 1) {
                 return {
                     assets: existingData.assets.slice(startIndex, startIndex + batchSize),
@@ -203,22 +235,37 @@ export function MediaProvider({ children }) {
         }
     }, [folderAssets]);
 
-    // Get current asset and preload next batch if needed
-    const getCurrentAsset = useCallback((folderId, index) => {
+    const getCurrentAsset = useCallback(async (folderId, index) => {
         const folderData = folderAssets[folderId];
         if (!folderData || !folderData.assets[index]) {
             return null;
         }
 
-        // Preload next batch if we're near the end of current batch
-        if (index % BATCH_SIZE === BATCH_SIZE - 2 && folderData.assets.length < folderData.totalCount) {
+        // Preload logic unchanged
+        let batchSize = BATCH_SIZE;
+        try {
+            const cleanupSettings = await AsyncStorage.getItem('@CleanupSettings');
+            if (cleanupSettings) {
+                const settings = JSON.parse(cleanupSettings);
+                const batchSizeMap = {
+                    small: 5,
+                    medium: 10,
+                    large: 20,
+                    xlarge: 50
+                };
+                batchSize = batchSizeMap[settings.batchSize] || BATCH_SIZE;
+            }
+        } catch (error) {
+            console.warn('Failed to get batch size for preloading:', error);
+        }
+
+        if (index % batchSize === batchSize - 2 && folderData.assets.length < folderData.totalCount) {
             loadAssetsBatch(folderId, folderData.assets.length);
         }
 
         return folderData.assets[index];
     }, [folderAssets, loadAssetsBatch]);
 
-    // Refresh functionality
     const refreshAllData = useCallback(async () => {
         try {
             setLoading(prev => ({ ...prev, refresh: true }));
@@ -226,7 +273,6 @@ export function MediaProvider({ children }) {
             const albums = await MediaLibrary.getAlbumsAsync();
             const updatedMetadata = {};
 
-            // Clear existing assets cache
             setFolderAssets({});
 
             await Promise.all(albums.map(async album => {
@@ -248,128 +294,143 @@ export function MediaProvider({ children }) {
         }
     }, [getFolderMetadata]);
 
-    // Fixed cleanup progress management with immediate AsyncStorage saves
-    const updateCleanupProgress = useCallback(async (folderId, progress) => {
-        //console.log('updateCleanupProgress called:', folderId, progress);
+    // SIMPLIFIED CLEANUP FUNCTIONS
 
-        try {
-            // Update state immediately
-            const newProgress = {
-                ...progress,
-                lastUpdated: new Date().toISOString()
-            };
+    // Start or resume a cleanup session
+    const startCleanupSession = useCallback(async (folderId) => {
+        console.log('Starting cleanup session for folder:', folderId);
 
-            setCleanupProgress(prev => {
-                const updated = {
-                    ...prev,
-                    [folderId]: {
-                        ...prev[folderId],
-                        ...newProgress
-                    }
-                };
-                //console.log('Updated cleanup progress state:', updated);
-                return updated;
-            });
+        // Load initial batch
+        await loadAssetsBatch(folderId, 0, BATCH_SIZE);
 
-            // Save to AsyncStorage immediately
-            const currentProgress = await AsyncStorage.getItem(STORAGE_KEYS.CLEANUP_PROGRESS);
-            const allProgress = currentProgress ? JSON.parse(currentProgress) : {};
-
-            allProgress[folderId] = {
-                ...allProgress[folderId],
-                ...newProgress
-            };
-
-            await AsyncStorage.setItem(STORAGE_KEYS.CLEANUP_PROGRESS, JSON.stringify(allProgress));
-            //console.log('Progress saved to AsyncStorage successfully');
-
-            return true;
-        } catch (error) {
-            console.error('Failed to update cleanup progress:', error);
-            throw error;
+        // Check if resuming existing session
+        if (currentSession.folderId === folderId && currentSession.currentIndex > 0) {
+            console.log('Resuming existing session at index:', currentSession.currentIndex);
+            return currentSession;
         }
-    }, []);
 
-    const getCleanupProgress = useCallback((folderId) => {
-        const progress = cleanupProgress[folderId] || {
-            status: 'not-started',
-            currentIndex: 0,
+        // Start new session
+        const newSession = {
+            folderId,
             deleteQueue: [],
             keepQueue: [],
-            totalProcessed: 0
+            currentIndex: 0
         };
 
-        //console.log('getCleanupProgress for', folderId, ':', progress);
-        return progress;
-    }, [cleanupProgress]);
+        setCurrentSession(newSession);
+        return newSession;
+    }, [loadAssetsBatch, currentSession]);
 
-    const resetCleanupProgress = useCallback(async (folderId) => {
-        //console.log('resetCleanupProgress called for:', folderId);
-
-        try {
-            // Update state
-            setCleanupProgress(prev => {
-                const updated = { ...prev };
-                delete updated[folderId];
-                //console.log('Reset progress state:', updated);
-                return updated;
-            });
-
-            // Clear from AsyncStorage immediately
-            const currentProgress = await AsyncStorage.getItem(STORAGE_KEYS.CLEANUP_PROGRESS);
-            const allProgress = currentProgress ? JSON.parse(currentProgress) : {};
-            delete allProgress[folderId];
-
-            await AsyncStorage.setItem(STORAGE_KEYS.CLEANUP_PROGRESS, JSON.stringify(allProgress));
-            //console.log('Progress cleared from AsyncStorage');
-
-            // Clear folder assets cache to force reload
-            setFolderAssets(prev => {
-                const updated = { ...prev };
-                delete updated[folderId];
-                return updated;
-            });
-
-            return true;
-        } catch (error) {
-            console.error('Failed to reset cleanup progress:', error);
-            throw error;
-        }
+    // Update current session (called as user makes decisions)
+    const updateCurrentSession = useCallback((updates) => {
+        console.log('Updating session:', updates);
+        setCurrentSession(prev => ({ ...prev, ...updates }));
     }, []);
 
-    // Initialize cleanup session
-    const initializeCleanup = useCallback(async (folderId) => {
-        //console.log('initializeCleanup called for:', folderId);
-
-        try {
-            // Load initial batch
-            await loadAssetsBatch(folderId, 0, BATCH_SIZE);
-
-            // Get current progress from state/storage
-            const currentProgress = getCleanupProgress(folderId);
-
-            // Only initialize if truly not started
-            if (currentProgress.status === 'not-started') {
-                //console.log('Initializing new cleanup session');
-                await updateCleanupProgress(folderId, {
-                    status: 'initialized',
-                    currentIndex: 0,
-                    deleteQueue: [],
-                    keepQueue: [],
-                    totalProcessed: 0
-                });
-            } else {
-                //console.log('Resuming existing cleanup session:', currentProgress);
-            }
-
-            return true;
-        } catch (error) {
-            console.error('Failed to initialize cleanup:', error);
-            throw error;
+    // Complete cleanup session and mark folder as completed
+    const completeCleanupSession = useCallback(async () => {
+        if (!currentSession.folderId) {
+            console.warn('No active session to complete');
+            return;
         }
-    }, [loadAssetsBatch, getCleanupProgress, updateCleanupProgress]);
 
-    // Available sorting methods
+        console.log('Completing cleanup session for folder:', currentSession.folderId);
+
+        const folderId = currentSession.folderId;
+        const folder = foldersMetadata[folderId];
+
+        if (!folder) {
+            console.error('Folder not found for completion:', folderId);
+            return;
+        }
+
+        // Mark folder as completed
+        const completionData = {
+            completedAt: new Date().toISOString(),
+            itemsDeleted: currentSession.deleteQueue.length,
+            itemsKept: currentSession.keepQueue.length,
+            totalItems: folder.totalCount
+        };
+
+        setCompletedFolders(prev => ({
+            ...prev,
+            [folderId]: completionData
+        }));
+
+        console.log('Folder marked as completed:', folderId, completionData);
+
+        // Return delete queue for actual deletion
+        const deleteQueue = [...currentSession.deleteQueue];
+
+        // Clear current session
+        setCurrentSession({
+            folderId: null,
+            deleteQueue: [],
+            keepQueue: [],
+            currentIndex: 0
+        });
+
+        return deleteQueue;
+    }, [currentSession, foldersMetadata]);
+
+    // Clear completion status (for re-evaluation)
+    const clearFolderCompletion = useCallback(async (folderId) => {
+        console.log('Clearing completion for folder:', folderId);
+
+        setCompletedFolders(prev => {
+            const updated = { ...prev };
+            delete updated[folderId];
+            return updated;
+        });
+
+        // Also clear any current session for this folder
+        if (currentSession.folderId === folderId) {
+            setCurrentSession({
+                folderId: null,
+                deleteQueue: [],
+                keepQueue: [],
+                currentIndex: 0
+            });
+        }
+
+        // Clear folder assets cache to force reload
+        setFolderAssets(prev => {
+            const updated = { ...prev };
+            delete updated[folderId];
+            return updated;
+        });
+    }, [currentSession]);
+
+    // Check if folder is completed
+    const isFolderCompleted = useCallback((folderId) => {
+        return !!completedFolders[folderId];
+    }, [completedFolders]);
+
+    // Get folder completion info
+    const getFolderCompletionInfo = useCallback((folderId) => {
+        const completion = completedFolders[folderId];
+        if (!completion) return null;
+
+        return {
+            isCompleted: true,
+            completedAt: completion.completedAt,
+            itemsDeleted: completion.itemsDeleted,
+            itemsKept: completion.itemsKept,
+            totalItems: completion.totalItems
+        };
+    }, [completedFolders]);
+
+    // Get current session info
+    const getCurrentSessionInfo = useCallback(() => {
+        return currentSession;
+    }, [currentSession]);
+
+    // Check if folder has active session
+    const hasActiveSession = useCallback((folderId) => {
+        return currentSession.folderId === folderId && currentSession.currentIndex > 0;
+    }, [currentSession]);
+
+    // Sorting functions (unchanged)
     const SORT_METHODS = {
         count: {
             name: 'Item Count',
@@ -400,8 +461,7 @@ export function MediaProvider({ children }) {
             name: 'Folder Size',
             icon: 'resize-outline',
             sort: (a, b) => {
-                // Approximate size based on total count (since we don't have actual folder sizes)
-                const sizeA = a.totalCount * (a.videoCount > a.photoCount ? 50 : 5); // Rough MB estimate
+                const sizeA = a.totalCount * (a.videoCount > a.photoCount ? 50 : 5);
                 const sizeB = b.totalCount * (b.videoCount > b.photoCount ? 50 : 5);
                 return sizeB - sizeA || a.name.localeCompare(b.name);
             }
@@ -418,7 +478,6 @@ export function MediaProvider({ children }) {
         }
     };
 
-    // Helper functions
     const getAllFolders = useCallback((customSortMethod = null) => {
         const sortKey = customSortMethod || sortMethod;
         const sortFunction = SORT_METHODS[sortKey]?.sort || SORT_METHODS.count.sort;
@@ -438,7 +497,6 @@ export function MediaProvider({ children }) {
     const setSortingMethod = useCallback((method) => {
         if (SORT_METHODS[method]) {
             setSortMethod(method);
-            // Save to AsyncStorage for persistence
             AsyncStorage.setItem('@SortMethod', method).catch(console.warn);
         }
     }, []);
@@ -474,47 +532,12 @@ export function MediaProvider({ children }) {
         };
     }, [foldersMetadata]);
 
-    const isFolderCompleted = useCallback((folderId) => {
-        const progress = cleanupProgress[folderId];
-        return progress && progress.status === 'completed';
-    }, [cleanupProgress]);
-
-    const clearCompletedFolder = useCallback(async (folderId) => {
-        //console.log('clearCompletedFolder called for:', folderId);
-
-        try {
-            // Same logic as resetCleanupProgress but specifically for completed folders
-            return await resetCleanupProgress(folderId);
-        } catch (error) {
-            console.error('Failed to clear completed folder:', error);
-            throw error;
-        }
-    }, [resetCleanupProgress]);
-
-    const getFolderCompletionStats = useCallback((folderId) => {
-        const progress = cleanupProgress[folderId];
-        const folder = foldersMetadata[folderId];
-
-        if (!progress || !folder) return null;
-
-        return {
-            isCompleted: progress.status === 'completed',
-            currentIndex: progress.currentIndex || 0,
-            totalCount: folder.totalCount,
-            itemsProcessed: progress.totalProcessed || 0,
-            itemsToDelete: progress.deleteQueue?.length || 0,
-            itemsToKeep: progress.keepQueue?.length || 0,
-            status: progress.status || 'not-started'
-        };
-    }, [cleanupProgress, foldersMetadata]);
-
     const value = useMemo(() => ({
         // State
         foldersMetadata,
         folderAssets,
         loading,
         errors,
-        cleanupProgress,
         lastRefreshed,
         sortMethod,
 
@@ -524,11 +547,17 @@ export function MediaProvider({ children }) {
         getCurrentAsset,
         refreshAllData,
 
-        // Cleanup management
-        initializeCleanup,
-        updateCleanupProgress,
-        getCleanupProgress,
-        resetCleanupProgress,
+        // Simplified cleanup management
+        startCleanupSession,
+        updateCurrentSession,
+        completeCleanupSession,
+        clearFolderCompletion,
+        getCurrentSessionInfo,
+
+        // Completion checking
+        isFolderCompleted,
+        getFolderCompletionInfo,
+        hasActiveSession,
 
         // Helpers
         getAllFolders,
@@ -536,36 +565,31 @@ export function MediaProvider({ children }) {
         getFolderStats,
         getSortMethods,
         setSortingMethod,
-        isFolderCompleted,
-        getFolderCompletionStats,
-        clearCompletedFolder,
-        isFolderCompleted,
-        getFolderCompletionStats,
         SORT_METHODS,
     }), [
         foldersMetadata,
         folderAssets,
         loading,
         errors,
-        cleanupProgress,
         lastRefreshed,
         sortMethod,
         getFolderMetadata,
         loadAssetsBatch,
         getCurrentAsset,
         refreshAllData,
-        initializeCleanup,
-        updateCleanupProgress,
-        getCleanupProgress,
-        resetCleanupProgress,
-        clearCompletedFolder,
+        startCleanupSession,
+        updateCurrentSession,
+        completeCleanupSession,
+        clearFolderCompletion,
+        getCurrentSessionInfo,
+        isFolderCompleted,
+        getFolderCompletionInfo,
+        hasActiveSession,
         getAllFolders,
         getFolderById,
         getFolderStats,
         getSortMethods,
-        setSortingMethod,
-        isFolderCompleted,
-        getFolderCompletionStats
+        setSortingMethod
     ]);
 
     return (
@@ -584,14 +608,18 @@ export function useMedia() {
 export function useFolder(folderId) {
     const {
         getFolderById,
-        getCleanupProgress,
+        getCurrentSessionInfo,
+        isFolderCompleted,
+        hasActiveSession,
         loading,
         errors
     } = useMedia();
 
     return {
         folder: getFolderById(folderId),
-        progress: getCleanupProgress(folderId),
+        isCompleted: isFolderCompleted(folderId),
+        hasActiveSession: hasActiveSession(folderId),
+        currentSession: getCurrentSessionInfo(),
         isLoading: loading[`folder-${folderId}-metadata`],
         error: errors[`folder-${folderId}-metadata`]
     };

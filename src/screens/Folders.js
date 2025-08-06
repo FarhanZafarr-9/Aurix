@@ -1,7 +1,8 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useMedia } from '../contexts/MediaContext';
+import { useTheme } from '../contexts/ThemeContext';
 import FolderItem from '../components/FolderItem';
 import * as MediaLibrary from 'expo-media-library';
 import { useNavigation } from '@react-navigation/native';
@@ -9,6 +10,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAppState } from '../contexts/AppStateContext';
 
 export default function Folders() {
+    const { colors, hideCompleted, showMediaCounts, showProgress } = useTheme();
     const { needsRefresh, completeRefresh } = useAppState();
 
     const navigation = useNavigation();
@@ -20,23 +22,189 @@ export default function Folders() {
         loading,
         errors,
         lastRefreshed,
-        getFolderCompletionStats
+        isFolderCompleted,
+        getFolderCompletionInfo,
+        hasActiveSession,
+        getCurrentSessionInfo
     } = useMedia();
 
-    // Get sorted folders array
-    const folders = getAllFolders();
+    const styles = useMemo(() => StyleSheet.create({
+        container: {
+            flex: 1,
+            backgroundColor: colors.background,
+            paddingBottom: 55
+        },
+        centerContent: {
+            flex: 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 24
+        },
+        header: {
+            paddingHorizontal: 20,
+            paddingTop: 36,
+            paddingBottom: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: colors.header,
+            borderBottomWidth: 0.75,
+            borderBottomColor: colors.borderLight
+        },
+        headerTitle: {
+            color: colors.text,
+            fontSize: 20,
+            fontWeight: '600',
+        },
+        headerSubtitle: {
+            color: colors.textSecondary,
+            fontSize: 12,
+            marginTop: 4,
+            height: 18
+        },
+        refreshButton: {
+            padding: 6,
+            marginLeft: 10
+        },
+        summaryContainer: {
+            paddingHorizontal: 20,
+            paddingBottom: 10,
+        },
+        summaryRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 16,
+            marginBottom: 4,
+        },
+        summaryItem: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            paddingTop: 15
+        },
+        summaryText: {
+            color: colors.textSecondary,
+            fontSize: 12,
+            fontWeight: '500',
+            height: 18
+        },
+        summarySubtext: {
+            color: colors.textTertiary,
+            fontSize: 11,
+            fontStyle: 'italic',
+        },
+        activeSessionBanner: {
+            backgroundColor: '#FF9500',
+            paddingHorizontal: 20,
+            paddingVertical: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            minHeight: 64
+        },
+        bannerText: {
+            color: 'white',
+            fontSize: 14,
+            fontWeight: '600',
+            height: 30,
+            flex: 1,
+        },
+        bannerSubtext: {
+            color: 'rgba(255, 255, 255, 0.9)',
+            fontSize: 12,
+            height: 16
+        },
+        resumeButton: {
+            backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderRadius: 6,
+        },
+        resumeButtonText: {
+            color: 'white',
+            fontSize: 12,
+            fontWeight: '600',
+        },
+        listContent: {
+            paddingHorizontal: 12,
+            paddingBottom: 16,
+            paddingTop: 8,
+            minHeight: '100%'
+        },
+        emptyContainer: {
+            flex: 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 40
+        },
+        emptyText: {
+            color: colors.textSecondary,
+            fontSize: 16,
+            marginTop: 12
+        },
+        loadingText: {
+            color: colors.textSecondary,
+            marginTop: 12,
+            fontSize: 14,
+        },
+        errorText: {
+            color: '#ff5555',
+            fontSize: 16,
+            textAlign: 'center',
+            marginBottom: 8
+        },
+        errorSubtext: {
+            color: colors.textSecondary,
+            fontSize: 12,
+            textAlign: 'center',
+            marginBottom: 16,
+            maxWidth: '80%'
+        },
+        button: {
+            backgroundColor: colors.card,
+            paddingHorizontal: 20,
+            paddingVertical: 10,
+            borderRadius: 6,
+        },
+        buttonText: {
+            color: colors.text,
+            fontWeight: '500',
+            fontSize: 14
+        },
+    }), [colors]);
 
-    // Get completion statistics
-    const completionStats = folders.reduce((stats, folder) => {
-        const folderStats = getFolderCompletionStats(folder.id);
-        if (folderStats?.isCompleted) {
-            stats.completed++;
-            stats.totalItemsToDelete += folderStats.itemsToDelete;
-        } else if (folderStats?.status === 'in-progress') {
-            stats.inProgress++;
-        }
-        return stats;
-    }, { completed: 0, inProgress: 0, totalItemsToDelete: 0 });
+    // Get sorted folders array
+    const folders = useMemo(() => {
+        const all = getAllFolders();
+        return hideCompleted ? all.filter(f => !isFolderCompleted(f.id)) : all;
+    }, [getAllFolders, hideCompleted, isFolderCompleted]);
+
+    const currentSession = getCurrentSessionInfo();
+
+    // Calculate summary statistics
+    const summaryStats = useMemo(() => {
+        let completed = 0;
+        let totalItemsDeleted = 0;
+        let hasInProgress = currentSession.folderId !== null;
+
+        folders.forEach(folder => {
+            if (isFolderCompleted(folder.id)) {
+                completed++;
+                const info = getFolderCompletionInfo(folder.id);
+                if (info) {
+                    totalItemsDeleted += info.itemsDeleted;
+                }
+            }
+        });
+
+        return {
+            completed,
+            totalItemsDeleted,
+            hasInProgress,
+            activeSessionFolder: currentSession.folderId ?
+                folders.find(f => f.id === currentSession.folderId) : null
+        };
+    }, [folders, isFolderCompleted, getFolderCompletionInfo, currentSession]);
 
     useFocusEffect(
         useCallback(() => {
@@ -56,17 +224,26 @@ export default function Folders() {
                 onPress={() => {
                     navigation.navigate('Cleanup', {
                         folderId: item.id,
-                        reset: false
                     });
                 }}
+                showCounts={showMediaCounts}
+                showProgress={showProgress}
             />
         );
+    };
+
+    const handleResumeSession = () => {
+        if (currentSession.folderId) {
+            navigation.navigate('Cleanup', {
+                folderId: currentSession.folderId,
+            });
+        }
     };
 
     if (!permissions) {
         return (
             <View style={styles.container}>
-                <ActivityIndicator size="large" />
+                <ActivityIndicator size="large" color={colors.textSecondary} />
             </View>
         );
     }
@@ -75,7 +252,7 @@ export default function Folders() {
         return (
             <View style={styles.container}>
                 <View style={styles.centerContent}>
-                    <Ionicons name="folder-open-outline" size={48} color="#888" />
+                    <Ionicons name="folder-open-outline" size={48} color={colors.textSecondary} />
                     <Text style={styles.errorText}>Media access required</Text>
                     <TouchableOpacity
                         onPress={requestPermissions}
@@ -92,7 +269,7 @@ export default function Folders() {
         return (
             <View style={styles.container}>
                 <View style={styles.centerContent}>
-                    <ActivityIndicator size="large" />
+                    <ActivityIndicator size="large" color={colors.textSecondary} />
                     <Text style={styles.loadingText}>
                         {folders.length > 0 ? 'Refreshing...' : 'Loading folders...'}
                     </Text>
@@ -126,8 +303,8 @@ export default function Folders() {
                     <Text style={styles.headerTitle}>Media Folders</Text>
                     <Text style={styles.headerSubtitle}>
                         {folders.length} folder{folders.length !== 1 ? 's' : ''}
-                        {completionStats.completed > 0 && ` • ${completionStats.completed} completed`}
-                        {completionStats.inProgress > 0 && ` • ${completionStats.inProgress} in progress`}
+                        {summaryStats.completed > 0 && ` • ${summaryStats.completed} completed`}
+                        {summaryStats.hasInProgress && ' • 1 in progress'}
                         {lastRefreshed && ` • Updated ${new Date(lastRefreshed).toLocaleTimeString()}`}
                     </Text>
                 </View>
@@ -140,35 +317,47 @@ export default function Folders() {
                     <Ionicons
                         name="refresh"
                         size={20}
-                        color={loading.refresh ? '#444' : '#666'}
+                        color={loading.refresh ? colors.textTertiary : colors.textSecondary}
                     />
                 </TouchableOpacity>
             </View>
 
+            {/* Active session banner */}
+            {summaryStats.hasInProgress && summaryStats.activeSessionFolder && showProgress && (
+                <View style={styles.activeSessionBanner}>
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.bannerText}>
+                            Cleanup in Progress
+                        </Text>
+                        <Text style={styles.bannerSubtext}>
+                            {summaryStats.activeSessionFolder.name} • {currentSession.currentIndex}/{summaryStats.activeSessionFolder.totalCount} reviewed
+                        </Text>
+                    </View>
+                    <TouchableOpacity
+                        style={styles.resumeButton}
+                        onPress={handleResumeSession}
+                    >
+                        <Text style={styles.resumeButtonText}>Resume</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+
             {/* Summary stats */}
-            {(completionStats.completed > 0 || completionStats.inProgress > 0) && (
+            {(summaryStats.completed > 0) && (
                 <View style={styles.summaryContainer}>
                     <View style={styles.summaryRow}>
-                        {completionStats.completed > 0 && (
+                        {summaryStats.completed > 0 && (
                             <View style={styles.summaryItem}>
                                 <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
                                 <Text style={styles.summaryText}>
-                                    {completionStats.completed} completed
-                                </Text>
-                            </View>
-                        )}
-                        {completionStats.inProgress > 0 && (
-                            <View style={styles.summaryItem}>
-                                <Ionicons name="time-outline" size={16} color="#FF9500" />
-                                <Text style={styles.summaryText}>
-                                    {completionStats.inProgress} in progress
+                                    {summaryStats.completed} completed
                                 </Text>
                             </View>
                         )}
                     </View>
-                    {completionStats.totalItemsToDelete > 0 && (
+                    {summaryStats.totalItemsDeleted > 0 && (
                         <Text style={styles.summarySubtext}>
-                            {completionStats.totalItemsToDelete} item{completionStats.totalItemsToDelete !== 1 ? 's' : ''} ready for deletion
+                            {summaryStats.totalItemsDeleted} item{summaryStats.totalItemsDeleted !== 1 ? 's' : ''} deleted across all folders
                         </Text>
                     )}
                 </View>
@@ -182,7 +371,7 @@ export default function Folders() {
                     contentContainerStyle={styles.listContent}
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
-                            <Ionicons name="folder-outline" size={48} color="#666" />
+                            <Ionicons name="folder-outline" size={48} color={colors.textSecondary} />
                             <Text style={styles.emptyText}>No media folders found</Text>
                             <TouchableOpacity
                                 onPress={refreshAllData}
@@ -194,128 +383,12 @@ export default function Folders() {
                     }
                     refreshing={!!loading.refresh}
                     onRefresh={refreshAllData}
-                    // Optional performance optimizations for FlatList
                     initialNumToRender={15}
                     maxToRenderPerBatch={15}
                     windowSize={10}
                     removeClippedSubviews={true}
                 />
             </View>
-
         </View>
     );
 }
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#0a0a0a',
-        paddingBottom: 55
-    },
-    centerContent: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 24
-    },
-    header: {
-        paddingHorizontal: 20,
-        paddingTop: 36,
-        paddingBottom: 12,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: '#181818',
-        borderBottomWidth: 0.75,
-        borderBottomColor: '#55555555'
-    },
-    headerTitle: {
-        color: '#fff',
-        fontSize: 20,
-        fontWeight: '600',
-    },
-    headerSubtitle: {
-        color: '#666',
-        fontSize: 12,
-        marginTop: 4,
-        height: 18
-    },
-    refreshButton: {
-        padding: 6,
-        marginLeft: 10
-    },
-    summaryContainer: {
-        paddingHorizontal: 20,
-        paddingBottom: 10,
-
-    },
-    summaryRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 16,
-        marginBottom: 4,
-    },
-    summaryItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingTop: 15
-    },
-    summaryText: {
-        color: '#888',
-        fontSize: 12,
-        fontWeight: '500',
-        height: 18
-    },
-    summarySubtext: {
-        color: '#666',
-        fontSize: 11,
-        fontStyle: 'italic',
-    },
-    listContent: {
-        paddingHorizontal: 12,
-        paddingBottom: 16,
-        paddingTop: 8,
-        minHeight: '100%'
-    },
-    emptyContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 40
-    },
-    emptyText: {
-        color: '#666',
-        fontSize: 16,
-        marginTop: 12
-    },
-    loadingText: {
-        color: '#888',
-        marginTop: 12,
-        fontSize: 14,
-    },
-    errorText: {
-        color: '#ff5555',
-        fontSize: 16,
-        textAlign: 'center',
-        marginBottom: 8
-    },
-    errorSubtext: {
-        color: '#888',
-        fontSize: 12,
-        textAlign: 'center',
-        marginBottom: 16,
-        maxWidth: '80%'
-    },
-    button: {
-        backgroundColor: '#333',
-        paddingHorizontal: 20,
-        paddingVertical: 10,
-        borderRadius: 6,
-    },
-    buttonText: {
-        color: '#fff',
-        fontWeight: '500',
-        fontSize: 14
-    },
-});
