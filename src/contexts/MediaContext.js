@@ -3,6 +3,7 @@ import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSetting, SETTINGS_KEYS } from '../utils/Settings';
+import { useTheme } from './ThemeContext';
 
 const STORAGE_KEYS = {
     COMPLETED_FOLDERS: '@CompletedFolders', // Simple completion tracking
@@ -16,13 +17,13 @@ const BATCH_SIZE = 10;
 const MediaContext = createContext();
 
 export function MediaProvider({ children }) {
+    const { sortMethod, updateSortMethod } = useTheme();
     // State management
     const [foldersMetadata, setFoldersMetadata] = useState({});
     const [folderAssets, setFolderAssets] = useState({});
     const [loading, setLoading] = useState({});
     const [errors, setErrors] = useState({});
     const [lastRefreshed, setLastRefreshed] = useState(null);
-    const [sortMethod, setSortMethod] = useState('count');
 
     // Simplified completion tracking - just folder IDs and basic info
     const [completedFolders, setCompletedFolders] = useState({}); // { folderId: { completedAt, itemsDeleted, totalItems } }
@@ -512,10 +513,8 @@ export function MediaProvider({ children }) {
         }
     };
 
-    const getAllFolders = useCallback((customSortMethod = null) => {
-        const sortKey = customSortMethod || sortMethod;
-        const sortFunction = SORT_METHODS[sortKey]?.sort || SORT_METHODS.count.sort;
-
+    const getAllFolders = useCallback(() => {
+        const sortFunction = SORT_METHODS[sortMethod]?.sort || SORT_METHODS.count.sort;
         return Object.values(foldersMetadata).sort(sortFunction);
     }, [foldersMetadata, sortMethod]);
 
@@ -527,28 +526,6 @@ export function MediaProvider({ children }) {
             isActive: key === sortMethod
         }));
     }, [sortMethod]);
-
-    const setSortingMethod = useCallback((method) => {
-        if (SORT_METHODS[method]) {
-            setSortMethod(method);
-            AsyncStorage.setItem('@SortMethod', method).catch(console.warn);
-        }
-    }, []);
-
-    // Load sort method from storage on init
-    useEffect(() => {
-        const loadSortMethod = async () => {
-            try {
-                const saved = await AsyncStorage.getItem('@SortMethod');
-                if (saved && SORT_METHODS[saved]) {
-                    setSortMethod(saved);
-                }
-            } catch (error) {
-                console.warn('Failed to load sort method:', error);
-            }
-        };
-        loadSortMethod();
-    }, []);
 
     const getFolderById = useCallback((folderId) => {
         return foldersMetadata[folderId] || null;
@@ -573,7 +550,6 @@ export function MediaProvider({ children }) {
         loading,
         errors,
         lastRefreshed,
-        sortMethod,
 
         // Core functions
         getFolderMetadata,
@@ -598,15 +574,12 @@ export function MediaProvider({ children }) {
         getFolderById,
         getFolderStats,
         getSortMethods,
-        setSortingMethod,
-        SORT_METHODS,
     }), [
         foldersMetadata,
         folderAssets,
         loading,
         errors,
         lastRefreshed,
-        sortMethod,
         getFolderMetadata,
         loadAssetsBatch,
         getCurrentAsset,
@@ -623,7 +596,6 @@ export function MediaProvider({ children }) {
         getFolderById,
         getFolderStats,
         getSortMethods,
-        setSortingMethod
     ]);
 
     return (
