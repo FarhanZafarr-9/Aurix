@@ -169,6 +169,7 @@ const FolderItem = ({ folder, onPress, showCounts, showProgress }) => {
             };
         }
 
+        return null;
         return {
             text: 'Ready to clean',
             style: styles.readyText
@@ -217,10 +218,13 @@ const FolderItem = ({ folder, onPress, showCounts, showProgress }) => {
                                 <Text style={styles.itemCount}>{formatBytes(folder.totalSize)}</Text>
                             </>
                         )}
-                        <Text style={styles.separator}>•</Text>
-                        <Text style={[styles.statusText, statusDisplay.style]}>
-                            {statusDisplay.text}
-                        </Text>
+                        {statusDisplay &&
+                            <>
+                                <Text style={styles.separator}>•</Text>
+                                <Text style={[styles.statusText, statusDisplay.style]}>
+                                    {statusDisplay.text}
+                                </Text>
+                            </>}
                     </View>}
                 </View>
 

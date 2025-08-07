@@ -8,8 +8,14 @@ export function AppStateProvider({ children }) {
     return (
         <AppStateContext.Provider value={{
             needsRefresh,
-            triggerRefresh: () => setNeedsRefresh(true),
-            completeRefresh: () => setNeedsRefresh(false),
+            triggerRefresh: () => {
+                if (!needsRefresh) setNeedsRefresh(true);
+            },
+
+            completeRefresh: () => {
+                if (needsRefresh) setNeedsRefresh(false);
+            }
+
         }}>
             {children}
         </AppStateContext.Provider>
