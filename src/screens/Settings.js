@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useTheme } from '../contexts/ThemeContext';
 import { useMedia } from '../contexts/MediaContext';
+import { getSetting, setSetting, SETTINGS_KEYS } from '../utils/Settings';
 import PickerSheet from '../components/PickerSheet';
 import Switch from '../components/Switch';
 
@@ -221,6 +222,46 @@ const OrganizationCard = memo(({ animatedStyle }) => {
     const { getAllFolders, getSortMethods } = useMedia();
     const [showPickerSort, setShowPickerSort] = useState(false);
     const [showPickerExclude, setShowPickerExclude] = useState(false);
+    const [folderItemLimit, setFolderItemLimit] = useState(10000);
+
+    useEffect(() => {
+        const loadSettings = async () => {
+            const limit = await getSetting(SETTINGS_KEYS.FOLDER_ITEM_LIMIT);
+            setFolderItemLimit(limit);
+        };
+        loadSettings();
+    }, []);
+
+    const handleSetFolderItemLimit = () => {
+        Alert.prompt(
+            'Set Folder Item Limit',
+            'Skip folders with more items than this limit. Enter 0 for no limit.',
+            [
+                {
+                    text: 'Cancel',
+                    style: 'cancel',
+                },
+                {
+                    text: 'Save',
+                    onPress: (text) => {
+                        const newLimit = parseInt(text, 10);
+                        if (!isNaN(newLimit) && newLimit >= 0) {
+                            if (newLimit > 0 && newLimit < 500) {
+                                Alert.alert('Invalid Limit', 'The minimum limit is 500.');
+                                return;
+                            }
+                            setSetting(SETTINGS_KEYS.FOLDER_ITEM_LIMIT, newLimit);
+                            setFolderItemLimit(newLimit);
+                        } else {
+                            Alert.alert('Invalid Input', 'Please enter a valid number.');
+                        }
+                    },
+                },
+            ],
+            'plain-text',
+            folderItemLimit.toString()
+        );
+    };
 
     // Get actual folders from media context
     const folders = getAllFolders();
@@ -280,6 +321,13 @@ const OrganizationCard = memo(({ animatedStyle }) => {
             </SettingRow>
 
             <SettingRow
+                icon="options-outline"
+                title="Folder Item Limit"
+                desc={`Currently: ${folderItemLimit === 0 ? 'No limit' : folderItemLimit}`}
+                onPress={handleSetFolderItemLimit}
+            />
+
+            <SettingRow
                 icon="refresh-outline"
                 title="Auto Refresh"
                 desc="Automatically refresh folder data when app opens"
@@ -303,9 +351,6 @@ const OrganizationCard = memo(({ animatedStyle }) => {
                     onValueChange={updateShowProgress}
                 />
             </SettingRow>
-
-            
-        
         </AnimatedCard>
     );
 });
