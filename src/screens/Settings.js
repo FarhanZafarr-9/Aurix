@@ -222,6 +222,7 @@ const OrganizationCard = memo(({ animatedStyle }) => {
     const { getAllFolders, getSortMethods } = useMedia();
     const [showPickerSort, setShowPickerSort] = useState(false);
     const [showPickerExclude, setShowPickerExclude] = useState(false);
+    const [showPickerLimit, setShowPickerLimit] = useState(false);
     const [folderItemLimit, setFolderItemLimit] = useState(10000);
 
     useEffect(() => {
@@ -232,35 +233,9 @@ const OrganizationCard = memo(({ animatedStyle }) => {
         loadSettings();
     }, []);
 
-    const handleSetFolderItemLimit = () => {
-        Alert.prompt(
-            'Set Folder Item Limit',
-            'Skip folders with more items than this limit. Enter 0 for no limit.',
-            [
-                {
-                    text: 'Cancel',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Save',
-                    onPress: (text) => {
-                        const newLimit = parseInt(text, 10);
-                        if (!isNaN(newLimit) && newLimit >= 0) {
-                            if (newLimit > 0 && newLimit < 500) {
-                                Alert.alert('Invalid Limit', 'The minimum limit is 500.');
-                                return;
-                            }
-                            setSetting(SETTINGS_KEYS.FOLDER_ITEM_LIMIT, newLimit);
-                            setFolderItemLimit(newLimit);
-                        } else {
-                            Alert.alert('Invalid Input', 'Please enter a valid number.');
-                        }
-                    },
-                },
-            ],
-            'plain-text',
-            folderItemLimit.toString()
-        );
+    const updateFolderItemLimit = (value) => {
+        setSetting(SETTINGS_KEYS.FOLDER_ITEM_LIMIT, value);
+        setFolderItemLimit(value);
     };
 
     // Get actual folders from media context
@@ -282,6 +257,19 @@ const OrganizationCard = memo(({ animatedStyle }) => {
         if (excludedFolders.length === 0) return 'None excluded';
         if (excludedFolders.length === 1) return '1 folder excluded';
         return `${excludedFolders.length} folders excluded`;
+    };
+
+    const limitOptions = [
+        { label: '500 items', value: 500 },
+        { label: '1,000 items', value: 1000 },
+        { label: '5,000 items', value: 5000 },
+        { label: '10,000 items', value: 10000 },
+        { label: 'No limit', value: 0 },
+    ];
+
+    const getLimitLabel = () => {
+        const option = limitOptions.find(opt => opt.value === folderItemLimit);
+        return option ? option.label : `${folderItemLimit} items`;
     };
 
     return (
@@ -323,9 +311,18 @@ const OrganizationCard = memo(({ animatedStyle }) => {
             <SettingRow
                 icon="options-outline"
                 title="Folder Item Limit"
-                desc={`Currently: ${folderItemLimit === 0 ? 'No limit' : folderItemLimit}`}
-                onPress={handleSetFolderItemLimit}
-            />
+                desc={`Scan folders with up to ${getLimitLabel()}`}
+                onPress={() => setShowPickerLimit(true)}
+            >
+                <PickerSheet
+                    visible={showPickerLimit}
+                    onClose={() => setShowPickerLimit(false)}
+                    value={folderItemLimit}
+                    options={limitOptions}
+                    onChange={updateFolderItemLimit}
+                    title="Folder Item Limit"
+                />
+            </SettingRow>
 
             <SettingRow
                 icon="refresh-outline"
