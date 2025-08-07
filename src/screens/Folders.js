@@ -146,6 +146,7 @@ export default function Folders() {
             color: colors.textSecondary,
             marginTop: 12,
             fontSize: 14,
+            height: 18
         },
         errorText: {
             color: '#ff5555',
