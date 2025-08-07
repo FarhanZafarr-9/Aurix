@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState } from 'react';
 const AppStateContext = createContext();
 
 export function AppStateProvider({ children }) {
-    const [needsRefresh, setNeedsRefresh] = useState(false);
+    const [needsRefresh, setNeedsRefresh] = useState(true);
     const [theme, setTheme] = useState('dark'); // Example theme state
 
     return (

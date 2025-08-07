@@ -5,6 +5,15 @@ import { useMedia } from '../contexts/MediaContext';
 import { useTheme } from '../contexts/ThemeContext';
 import BottomSheet from './BottomSheet';
 
+const formatBytes = (bytes, decimals = 2) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+};
+
 const FolderItem = ({ folder, onPress, showCounts, showProgress }) => {
     const { colors } = useTheme();
     const {
@@ -202,6 +211,12 @@ const FolderItem = ({ folder, onPress, showCounts, showProgress }) => {
 
                     {showProgress && <View style={styles.detailsRow}>
                         <Text style={styles.itemCount}>{folder.totalCount} items</Text>
+                        {folder.totalSize > 0 && (
+                            <>
+                                <Text style={styles.separator}>•</Text>
+                                <Text style={styles.itemCount}>{formatBytes(folder.totalSize)}</Text>
+                            </>
+                        )}
                         <Text style={styles.separator}>•</Text>
                         <Text style={[styles.statusText, statusDisplay.style]}>
                             {statusDisplay.text}
