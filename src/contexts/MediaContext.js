@@ -153,30 +153,38 @@ export function MediaProvider({ children }) {
 
             // Calculate total size
             setLoading(prev => ({ ...prev, [cacheKey]: true, status: 'sizing' }));
-            let totalSize = 0;
-            let assetsPage = await MediaLibrary.getAssetsAsync({
-                album: album.id,
-                first: 100,
-                mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video]
-            });
-            while (assetsPage.assets.length > 0) {
-                const fileInfos = await Promise.all(
-                    assetsPage.assets.map(asset => FileSystem.getInfoAsync(asset.uri, { size: true }))
-                );
-                totalSize += fileInfos.reduce((sum, info) => sum + (info.exists ? info.size : 0), 0);
 
-                if (assetsPage.hasNextPage) {
-                    assetsPage = await MediaLibrary.getAssetsAsync({
-                        album: album.id,
-                        first: 100,
-                        after: assetsPage.endCursor,
-                        mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video]
-                    });
-                } else {
-                    break;
+            const calculateSizeForType = async (mediaType) => {
+                let size = 0;
+                let assetsPage = await MediaLibrary.getAssetsAsync({
+                    album: album.id,
+                    first: 100,
+                    mediaType: mediaType
+                });
+
+                while (assetsPage.assets.length > 0) {
+                    const fileInfos = await Promise.all(
+                        assetsPage.assets.map(asset => FileSystem.getInfoAsync(asset.uri, { size: true }))
+                    );
+                    size += fileInfos.reduce((sum, info) => sum + (info.exists ? info.size : 0), 0);
+
+                    if (assetsPage.hasNextPage) {
+                        assetsPage = await MediaLibrary.getAssetsAsync({
+                            album: album.id,
+                            first: 100,
+                            after: assetsPage.endCursor,
+                            mediaType: mediaType
+                        });
+                    } else {
+                        break;
+                    }
                 }
-            }
-            baseMetadata.totalSize = totalSize;
+                return size;
+            };
+
+            const photoSize = await calculateSizeForType(MediaLibrary.MediaType.photo);
+            const videoSize = await calculateSizeForType(MediaLibrary.MediaType.video);
+            baseMetadata.totalSize = photoSize + videoSize;
 
             setFoldersMetadata(prev => ({ ...prev, [album.id]: baseMetadata }));
             return baseMetadata;
