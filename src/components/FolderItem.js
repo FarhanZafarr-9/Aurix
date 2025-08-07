@@ -210,22 +210,26 @@ const FolderItem = ({ folder, onPress, showCounts, showProgress }) => {
                 <View style={styles.infoContainer}>
                     <Text style={styles.name} numberOfLines={1}>{folder.name}</Text>
 
-                    {showProgress && <View style={styles.detailsRow}>
-                        <Text style={styles.itemCount}>{folder.totalCount} items</Text>
-                        {folder.totalSize > 0 && (
-                            <>
-                                <Text style={styles.separator}>•</Text>
-                                <Text style={styles.itemCount}>{formatBytes(folder.totalSize)}</Text>
-                            </>
-                        )}
-                        {statusDisplay &&
-                            <>
-                                <Text style={styles.separator}>•</Text>
-                                <Text style={[styles.statusText, statusDisplay.style]}>
-                                    {statusDisplay.text}
-                                </Text>
-                            </>}
-                    </View>}
+                    {showProgress && (
+                        <View style={styles.detailsRow}>
+                            <Text style={styles.itemCount}>{folder.totalCount} items</Text>
+                            {folder.totalSize > 0 && !folder.isSkipped && (
+                                <>
+                                    <Text style={styles.separator}>•</Text>
+                                    <Text style={styles.itemCount}>{formatBytes(folder.totalSize)}</Text>
+                                </>
+                            )}
+                            <Text style={styles.separator}>•</Text>
+                            <Text style={[styles.statusText, statusDisplay.style]}>
+                                {statusDisplay.text}
+                            </Text>
+                        </View>
+                    )}
+                    {folder.isSkipped && (
+                        <Text style={[styles.itemCount, { color: colors.textTertiary, fontStyle: 'italic' }]}>
+                            Folder size calculation skipped due to item count.
+                        </Text>
+                    )}
                 </View>
 
                 {/* Media type pills and indicator */}

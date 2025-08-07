@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, FlatList } from 'react-native';
+import { useCallback, useMemo, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, FlatList, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useMedia } from '../contexts/MediaContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -9,8 +9,33 @@ import { useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAppState } from '../contexts/AppStateContext';
 
+const ProgressBar = ({ progress, height = 4, color = '#007AFF' }) => {
+    const animatedWidth = useMemo(() => new Animated.Value(progress), []);
+
+    useEffect(() => {
+        Animated.timing(animatedWidth, {
+            toValue: progress,
+            duration: 200,
+            useNativeDriver: false,
+        }).start();
+    }, [progress]);
+
+    const width = animatedWidth.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['0%', '100%'],
+    });
+
+    return (
+        <View style={{ height, backgroundColor: 'rgba(0, 122, 255, 0.2)', borderRadius: height / 2 }}>
+            <Animated.View style={{ height, width, backgroundColor: color, borderRadius: height / 2 }} />
+        </View>
+    );
+};
+
 export default function Folders() {
     const { colors, hideCompleted, showMediaCounts, showProgress } = useTheme();
+    console.log("Colors:", colors);
+
     const { needsRefresh, completeRefresh } = useAppState();
 
     const navigation = useNavigation();
@@ -142,11 +167,16 @@ export default function Folders() {
             fontSize: 16,
             marginTop: 12
         },
+        loadingContainer: {
+            paddingHorizontal: 20,
+            paddingVertical: 10,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+        },
         loadingText: {
             color: colors.textSecondary,
-            marginTop: 12,
-            fontSize: 14,
-            height: 18
+            fontSize: 12,
+            marginBottom: 8,
         },
         errorText: {
             color: '#ff5555',
@@ -266,21 +296,6 @@ export default function Folders() {
         );
     }
 
-    if (loading.all) {
-        let loadingMessage = 'Loading folders...';
-        if (loading.status === 'metadata') loadingMessage = 'Fetching metadata...';
-        if (loading.status === 'sizing') loadingMessage = 'Calculating folder sizes...';
-
-        return (
-            <View style={styles.container}>
-                <View style={styles.centerContent}>
-                    <ActivityIndicator size="large" color={colors.textSecondary} />
-                    <Text style={styles.loadingText}>{loadingMessage}</Text>
-                </View>
-            </View>
-        );
-    }
-
     if (errors.all) {
         return (
             <View style={styles.container}>
@@ -305,10 +320,11 @@ export default function Folders() {
                 <View>
                     <Text style={styles.headerTitle}>Media Folders</Text>
                     <Text style={styles.headerSubtitle}>
-                        {folders.length} folder{folders.length !== 1 ? 's' : ''}
+                        {loading.all && loading.total > 0
+                            ? `Loaded ${loading.loaded}/${loading.total} folders`
+                            : `${folders.length} folder${folders.length !== 1 ? 's' : ''}`}
                         {summaryStats.completed > 0 && ` • ${summaryStats.completed} completed`}
                         {summaryStats.hasInProgress && ' • 1 in progress'}
-                        {lastRefreshed && ` • Updated ${new Date(lastRefreshed).toLocaleTimeString()}`}
                     </Text>
                 </View>
 
@@ -324,6 +340,15 @@ export default function Folders() {
                     />
                 </TouchableOpacity>
             </View>
+
+            {loading.all && (
+                <View style={styles.loadingContainer}>
+                    <Text style={styles.loadingText}>
+                        {loading.status || 'Calculating...'}
+                    </Text>
+                    <ProgressBar progress={loading.progress || 0} />
+                </View>
+            )}
 
             {/* Active session banner */}
             {summaryStats.hasInProgress && summaryStats.activeSessionFolder && showProgress && (
@@ -373,16 +398,18 @@ export default function Folders() {
                     renderItem={renderFolderItem}
                     contentContainerStyle={styles.listContent}
                     ListEmptyComponent={
-                        <View style={styles.emptyContainer}>
-                            <Ionicons name="folder-outline" size={48} color={colors.textSecondary} />
-                            <Text style={styles.emptyText}>No media folders found</Text>
-                            <TouchableOpacity
-                                onPress={refreshAllData}
-                                style={[styles.button, { marginTop: 16 }]}
-                            >
-                                <Text style={styles.buttonText}>Refresh</Text>
-                            </TouchableOpacity>
-                        </View>
+                        !loading.all && (
+                            <View style={styles.emptyContainer}>
+                                <Ionicons name="folder-outline" size={48} color={colors.textSecondary} />
+                                <Text style={styles.emptyText}>No media folders found</Text>
+                                <TouchableOpacity
+                                    onPress={refreshAllData}
+                                    style={[styles.button, { marginTop: 16 }]}
+                                >
+                                    <Text style={styles.buttonText}>Refresh</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )
                     }
                     refreshing={!!loading.all}
                     onRefresh={() => refreshAllData(true)}
