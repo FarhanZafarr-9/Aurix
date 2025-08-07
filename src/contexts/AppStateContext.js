@@ -1,18 +1,15 @@
-import React, { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState } from 'react';
 
 const AppStateContext = createContext();
 
 export function AppStateProvider({ children }) {
-    const [needsRefresh, setNeedsRefresh] = useState(false);
-    const [theme, setTheme] = useState('dark'); // Example theme state
+    const [needsRefresh, setNeedsRefresh] = useState(true);
 
     return (
         <AppStateContext.Provider value={{
             needsRefresh,
             triggerRefresh: () => setNeedsRefresh(true),
             completeRefresh: () => setNeedsRefresh(false),
-            theme,
-            setTheme
         }}>
             {children}
         </AppStateContext.Provider>
