@@ -65,7 +65,6 @@ const FolderItem = ({ folder, onPress, showCounts, showProgress }) => {
             };
         }
 
-        return null;
         return {
             text: 'Ready to clean',
             style: styles.readyText
