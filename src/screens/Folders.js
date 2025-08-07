@@ -265,28 +265,30 @@ export default function Folders() {
         );
     }
 
-    if (loading.refresh) {
+    if (loading.all) {
+        let loadingMessage = 'Loading folders...';
+        if (loading.status === 'metadata') loadingMessage = 'Fetching metadata...';
+        if (loading.status === 'sizing') loadingMessage = 'Calculating folder sizes...';
+
         return (
             <View style={styles.container}>
                 <View style={styles.centerContent}>
                     <ActivityIndicator size="large" color={colors.textSecondary} />
-                    <Text style={styles.loadingText}>
-                        {folders.length > 0 ? 'Refreshing...' : 'Loading folders...'}
-                    </Text>
+                    <Text style={styles.loadingText}>{loadingMessage}</Text>
                 </View>
             </View>
         );
     }
 
-    if (errors.refresh) {
+    if (errors.all) {
         return (
             <View style={styles.container}>
                 <View style={styles.centerContent}>
                     <Ionicons name="warning" size={48} color="#ff5555" />
                     <Text style={styles.errorText}>Error loading folders</Text>
-                    <Text style={styles.errorSubtext}>{errors.refresh}</Text>
+                    <Text style={styles.errorSubtext}>{errors.all}</Text>
                     <TouchableOpacity
-                        onPress={refreshAllData}
+                        onPress={() => refreshAllData(true)}
                         style={styles.button}
                     >
                         <Text style={styles.buttonText}>Retry</Text>
@@ -310,14 +312,14 @@ export default function Folders() {
                 </View>
 
                 <TouchableOpacity
-                    onPress={refreshAllData}
+                    onPress={() => refreshAllData(true)}
                     style={styles.refreshButton}
-                    disabled={loading.refresh}
+                    disabled={loading.all}
                 >
                     <Ionicons
                         name="refresh"
                         size={20}
-                        color={loading.refresh ? colors.textTertiary : colors.textSecondary}
+                        color={loading.all ? colors.textTertiary : colors.textSecondary}
                     />
                 </TouchableOpacity>
             </View>
@@ -381,8 +383,8 @@ export default function Folders() {
                             </TouchableOpacity>
                         </View>
                     }
-                    refreshing={!!loading.refresh}
-                    onRefresh={refreshAllData}
+                    refreshing={!!loading.all}
+                    onRefresh={() => refreshAllData(true)}
                     initialNumToRender={15}
                     maxToRenderPerBatch={15}
                     windowSize={10}
