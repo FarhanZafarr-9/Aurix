@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useMemo, useCallback, useEf
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSetting, SETTINGS_KEYS } from '../utils/Settings';
 
 const STORAGE_KEYS = {
     COMPLETED_FOLDERS: '@CompletedFolders', // Simple completion tracking
@@ -107,7 +108,7 @@ export function MediaProvider({ children }) {
         const cacheKey = `folder-${album.id}-metadata`;
         const existingMetadata = foldersMetadata[album.id];
 
-        if (!forceRefresh && existingMetadata && existingMetadata.totalSize) {
+        if (!forceRefresh && existingMetadata && (existingMetadata.totalSize || existingMetadata.isSkipped)) {
             return existingMetadata;
         }
 
@@ -130,8 +131,16 @@ export function MediaProvider({ children }) {
                 firstAssetUri: firstAsset?.uri,
                 creationDate: firstAsset?.creationTime || new Date().toISOString(),
                 lastUpdated: new Date().toISOString(),
-                totalSize: 0, // Default to 0
+                totalSize: 0,
+                isSkipped: false,
             };
+
+            const folderItemLimit = await getSetting(SETTINGS_KEYS.FOLDER_ITEM_LIMIT);
+            if (folderItemLimit > 0 && baseMetadata.totalCount > folderItemLimit) {
+                baseMetadata.isSkipped = true;
+                setFoldersMetadata(prev => ({ ...prev, [album.id]: baseMetadata }));
+                return baseMetadata;
+            }
 
             // Fetch counts in parallel
             const [photoResult, videoResult] = await Promise.all([
@@ -144,7 +153,11 @@ export function MediaProvider({ children }) {
             // Calculate total size
             setLoading(prev => ({ ...prev, [cacheKey]: true, status: 'sizing' }));
             let totalSize = 0;
-            let assetsPage = await MediaLibrary.getAssetsAsync({ album: album.id, first: 100 });
+            let assetsPage = await MediaLibrary.getAssetsAsync({
+                album: album.id,
+                first: 100,
+                mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video]
+            });
             while (assetsPage.assets.length > 0) {
                 const fileInfos = await Promise.all(
                     assetsPage.assets.map(asset => FileSystem.getInfoAsync(asset.uri, { size: true }))
@@ -152,7 +165,12 @@ export function MediaProvider({ children }) {
                 totalSize += fileInfos.reduce((sum, info) => sum + (info.exists ? info.size : 0), 0);
 
                 if (assetsPage.hasNextPage) {
-                    assetsPage = await MediaLibrary.getAssetsAsync({ album: album.id, first: 100, after: assetsPage.endCursor });
+                    assetsPage = await MediaLibrary.getAssetsAsync({
+                        album: album.id,
+                        first: 100,
+                        after: assetsPage.endCursor,
+                        mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video]
+                    });
                 } else {
                     break;
                 }
@@ -173,29 +191,42 @@ export function MediaProvider({ children }) {
 
     const refreshAllData = useCallback(async (forceRefresh = false) => {
         try {
-            setLoading({ all: true, status: 'folders' });
+            setLoading({ all: true, status: 'folders', progress: 0, total: 0, loaded: 0 });
             setErrors({});
 
             const albums = await MediaLibrary.getAlbumsAsync();
-            const newMetadata = { ...foldersMetadata };
+            const total = albums.length;
+            setLoading(prev => ({ ...prev, total }));
 
-            setLoading({ all: true, status: 'metadata' });
+            let loaded = 0;
+            const newMetadata = {};
+
             for (const album of albums) {
                 const metadata = await getFolderMetadata(album, forceRefresh);
                 if (metadata) {
                     newMetadata[album.id] = metadata;
                 }
+                loaded++;
+                setLoading(prev => ({
+                    ...prev,
+                    progress: loaded / total,
+                    loaded,
+                    status: `Processing ${loaded}/${total}...`
+                }));
+                // Update metadata state incrementally
+                setFoldersMetadata(prevMetadata => ({ ...prevMetadata, ...newMetadata }));
+                // Give the UI a chance to update
+                await new Promise(resolve => setTimeout(resolve, 10));
             }
 
-            setFoldersMetadata(newMetadata);
             setLastRefreshed(new Date().toISOString());
-            AsyncStorage.setItem(STORAGE_KEYS.FOLDERS_METADATA, JSON.stringify(newMetadata));
+            AsyncStorage.setItem(STORAGE_KEYS.FOLDERS_METADATA, JSON.stringify(foldersMetadata));
 
         } catch (error) {
             console.warn('Failed to refresh all data:', error);
             setErrors(prev => ({ ...prev, all: error.message }));
         } finally {
-            setLoading({});
+            setLoading(prev => ({ ...prev, all: false, status: null }));
         }
     }, [getFolderMetadata, foldersMetadata]);
 	    const loadAssetsBatch = useCallback(async (folderId, startIndex = 0, customBatchSize = null) => {
